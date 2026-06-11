@@ -39,7 +39,7 @@ export interface RoomSnapshot {
 /** Entidad tal y como viaja en un snapshot de partida. */
 export interface SnapEntity {
   id: number;
-  kind: "player" | "cpu" | "asteroid" | "station" | "missile";
+  kind: "player" | "cpu" | "asteroid" | "station" | "missile" | "nebula" | "mine";
   x: number;
   y: number;
   heading: number;
@@ -48,6 +48,7 @@ export interface SnapEntity {
   hullFrac?: number;
   shieldFrac?: number;
   scanned?: boolean;
+  radius?: number;
 }
 
 export const SHIP_SYSTEMS = ["reactor", "beams", "missiles", "maneuver", "impulse", "shields"] as const;
@@ -97,6 +98,8 @@ export interface SnapShip {
   systems: Record<ShipSystem, SnapSystem>;
   repairing: ShipSystem | null;
   scan: { targetId: number; progress: number } | null;
+  docked: boolean;
+  canDock: boolean;
 }
 
 export type SnapEvent =
@@ -127,6 +130,8 @@ export type ClientMsg =
   | { t: "startGame" }
   | { t: "helm"; cmd: "setImpulse"; value: number }
   | { t: "helm"; cmd: "setHeading"; value: number }
+  | { t: "helm"; cmd: "dock" }
+  | { t: "helm"; cmd: "undock" }
   | { t: "weapons"; cmd: "setTarget"; id: number | null }
   | { t: "weapons"; cmd: "loadTube"; tube: number }
   | { t: "weapons"; cmd: "fireTube"; tube: number }

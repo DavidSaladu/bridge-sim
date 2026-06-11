@@ -230,6 +230,45 @@ export class Scene3D {
 
   private buildMesh(e: SnapEntity): THREE.Group {
     if (e.kind === "asteroid") return makeAsteroidMesh(e.id);
+    if (e.kind === "station") {
+      const g = new THREE.Group();
+      const mat = new THREE.MeshStandardMaterial({ color: 0x99aa88, metalness: 0.6, roughness: 0.4 });
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(10, 2, 8, 24), mat);
+      ring.rotation.x = Math.PI / 2;
+      g.add(ring);
+      const core = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 8, 8), mat);
+      g.add(core);
+      const beacon = new THREE.Mesh(
+        new THREE.SphereGeometry(1, 8, 8),
+        new THREE.MeshStandardMaterial({ color: 0x44ff88, emissive: 0x22cc66, emissiveIntensity: 2.5 }),
+      );
+      beacon.position.y = 6;
+      g.add(beacon);
+      g.scale.setScalar(5);
+      return g;
+    }
+    if (e.kind === "nebula") {
+      const g = new THREE.Group();
+      const r = (e.radius ?? 2000) * SCALE;
+      for (let i = 0; i < 6; i++) {
+        const sprite = new THREE.Sprite(
+          new THREE.SpriteMaterial({ map: makeNebulaTexture(275), depthWrite: false, transparent: true, opacity: 0.5 }),
+        );
+        sprite.position.set((Math.random() - 0.5) * r, (Math.random() - 0.5) * r * 0.3, (Math.random() - 0.5) * r);
+        sprite.scale.setScalar(r * (1 + Math.random()));
+        g.add(sprite);
+      }
+      return g;
+    }
+    if (e.kind === "mine") {
+      const g = new THREE.Group();
+      const m = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(1.5, 0),
+        new THREE.MeshStandardMaterial({ color: 0x553333, emissive: 0xff2244, emissiveIntensity: 0.8, roughness: 0.6 }),
+      );
+      g.add(m);
+      return g;
+    }
     if (e.kind === "player") return makeShipMesh(0x6699cc, 0x33bbff);
     if (e.kind === "missile") {
       const g = new THREE.Group();

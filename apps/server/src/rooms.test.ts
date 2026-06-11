@@ -168,12 +168,11 @@ describe("Armas y fin de partida", () => {
     room.handleMessage(r.id, { t: "takeStation", station: "weapons" });
     room.handleMessage(r.id, { t: "startGame" });
 
-    // matar a los hostiles directamente para forzar victoria
+    // matar a los hostiles directamente para forzar victoria (sobre el mundo real, sin niebla)
     const world = room.world!;
-    for (const e of world.snapshot().entities) {
+    for (const e of world.allEntities()) {
       if (e.kind === "cpu") {
-        const cpu = world.get(e.id) as unknown as { takeDamage: (d: number, b: number, w: typeof world) => boolean };
-        cpu.takeDamage(99999, 0, world);
+        (e as unknown as { takeDamage: (d: number, b: number, w: typeof world) => boolean }).takeDamage(99999, 0, world);
       }
     }
     await new Promise((res) => setTimeout(res, 150));
@@ -262,7 +261,7 @@ describe("Comunicaciones", () => {
     room.handleMessage(r.id, { t: "takeStation", station: "comms" });
     room.handleMessage(r.id, { t: "startGame" });
     const world = room.world!;
-    const cpu = [...world.snapshot().entities].find((e) => e.kind === "cpu")!;
+    const cpu = [...world.allEntities()].find((e) => e.kind === "cpu")!;
     return { room, b, r, world, cpu };
   }
 
@@ -293,6 +292,26 @@ describe("Comunicaciones", () => {
     room.handleMessage(r.id, { t: "comms", cmd: "choose", index: 0 });
     expect(ship.surrendered).toBe(true);
     expect(world.hostilesAlive).toBe(1); // queda el otro KR
+    room.stop();
+  });
+});
+
+describe("Atraque", () => {
+  it("el comando dock de Pilotaje atraca junto a una estación", () => {
+    const room = new RoomManager().create();
+    const b = fakeOutbox();
+    const r = room.join("Pil", b);
+    if (!r.ok) throw new Error("join failed");
+    room.handleMessage(r.id, { t: "takeStation", station: "helm" });
+    room.handleMessage(r.id, { t: "startGame" });
+    const ship = room.world!.ship;
+    // junto a DS-1
+    ship.x = -1800; ship.y = -900; ship.speed = 0; ship.impulse = 0;
+    room.handleMessage(r.id, { t: "helm", cmd: "dock" });
+    expect(ship.dockedTo).not.toBeNull();
+    // mover el impulso despega automáticamente
+    room.handleMessage(r.id, { t: "helm", cmd: "setImpulse", value: 0.5 });
+    expect(ship.dockedTo).toBeNull();
     room.stop();
   });
 });

@@ -224,8 +224,17 @@ export class Room {
         }
         const ship = this.world?.ship;
         if (!ship) return;
-        if (msg.cmd === "setImpulse" && typeof msg.value === "number") ship.setImpulse(msg.value);
+        if (msg.cmd === "setImpulse" && typeof msg.value === "number") {
+          if (ship.dockedTo != null) ship.undock(); // mover impulso despega
+          ship.setImpulse(msg.value);
+        }
         if (msg.cmd === "setHeading" && typeof msg.value === "number") ship.setTargetHeading(msg.value);
+        if (msg.cmd === "dock" && this.world) {
+          if (!ship.requestDock(this.world)) {
+            player.outbox?.send({ t: "error", code: "dock_failed", message: "Acércate a menos de 1 km y frena a <40 m/s" });
+          }
+        }
+        if (msg.cmd === "undock") ship.undock();
         break;
       }
       case "engineering": {

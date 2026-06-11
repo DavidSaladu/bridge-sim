@@ -433,6 +433,28 @@ function HelmView({ snap, send, events }: { snap: GameSnap; send: (m: object) =>
               </button>
             ))}
           </div>
+          <div style={{ marginTop: "0.75rem" }}>
+            {ship.docked ? (
+              <button
+                style={{ borderColor: "#4ade80", background: "#14532d" }}
+                onClick={() => send({ t: "helm", cmd: "undock" })}
+              >
+                🚀 Despegar
+              </button>
+            ) : ship.canDock ? (
+              <button
+                style={{ borderColor: "#4ade80" }}
+                onClick={() => { applyImpulse(0); send({ t: "helm", cmd: "dock" }); }}
+              >
+                🛰 Atracar
+              </button>
+            ) : (
+              <span className="muted" style={{ fontSize: "0.8rem" }}>
+                Para atracar: &lt;1 km de una estación y &lt;40 m/s
+              </span>
+            )}
+            {ship.docked && <p className="muted" style={{ fontSize: "0.8rem", margin: "0.3rem 0 0" }}>Atracada: reparando casco y sistemas, recargando energía…</p>}
+          </div>
         </div>
       </div>
       </div>

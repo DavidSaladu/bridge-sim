@@ -1,4 +1,4 @@
-export type EntityKind = "player" | "cpu" | "asteroid" | "station" | "missile";
+export type EntityKind = "player" | "cpu" | "asteroid" | "station" | "missile" | "nebula" | "mine";
 
 export interface EntityState {
   id: number;
@@ -11,6 +11,7 @@ export interface EntityState {
   hullFrac?: number;
   shieldFrac?: number;
   scanned?: boolean;
+  radius?: number;
 }
 
 export type TubeStateSim = "empty" | "loading" | "loaded";
@@ -43,6 +44,8 @@ export interface PlayerShipState {
   repairing: SystemName | null;
   systems: Record<SystemName, SystemState>;
   scan: { targetId: number; progress: number } | null;
+  docked: boolean;
+  canDock: boolean;
 }
 
 export type SimEvent =

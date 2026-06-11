@@ -77,6 +77,28 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
       return [c + dx * scale, c - dy * scale];
     };
 
+    // Nebulosas: manchas violetas translúcidas (pueden verse parcialmente aunque el centro quede fuera)
+    for (const e of snap.entities) {
+      if (e.kind !== "nebula" || !e.radius) continue;
+      const dx = e.x - ship.x;
+      const dy = e.y - ship.y;
+      const sx = c + dx * scale;
+      const sy = c - dy * scale;
+      const sr = e.radius * scale;
+      const grad = ctx.createRadialGradient(sx, sy, sr * 0.2, sx, sy, sr);
+      grad.addColorStop(0, "rgba(168, 85, 247, 0.22)");
+      grad.addColorStop(1, "rgba(168, 85, 247, 0.04)");
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(c, c, c - 1, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     // Eventos: rayos y explosiones (desvanecen en ~400/700 ms)
     for (const { ev, at } of events ?? []) {
       const age = now - at;
@@ -113,6 +135,27 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
         ctx.beginPath();
         ctx.arc(sx, sy, 3, 0, Math.PI * 2);
         ctx.fill();
+      } else if (e.kind === "station") {
+        ctx.strokeStyle = "#4ade80";
+        ctx.fillStyle = "rgba(74, 222, 128, 0.25)";
+        ctx.beginPath();
+        ctx.rect(sx - 5, sy - 5, 10, 10);
+        ctx.fill();
+        ctx.stroke();
+        if (e.callSign) {
+          ctx.fillStyle = "rgba(134, 239, 172, 0.8)";
+          ctx.font = "10px monospace";
+          ctx.fillText(e.callSign, sx + 8, sy + 3);
+        }
+      } else if (e.kind === "mine") {
+        ctx.fillStyle = "#fb7185";
+        ctx.beginPath();
+        ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(251, 113, 133, 0.4)";
+        ctx.beginPath();
+        ctx.arc(sx, sy, 6, 0, Math.PI * 2);
+        ctx.stroke();
       } else if (e.kind === "missile") {
         ctx.fillStyle = "#fbbf24";
         ctx.beginPath();

@@ -38,6 +38,12 @@ const CPU_BEAM = { range: 1300, cycle: 5, dmg: 6 };
 const TUBE_LOAD_TIME = 8;
 const SCAN_TIME = 6;
 const SCAN_RANGE = 12000;
+const DOCK_RANGE = 1000;
+const DOCK_MAX_SPEED = 40;
+const NEBULA_SIGHT = 5000;
+const MINE_TRIGGER = 600;
+const MINE_BLAST = 900;
+const MINE_DMG = 60;
 const MISSILE = { speed: 220, turnRate: 100, dmg: 35, life: 40, proximity: 80 };
 
 export abstract class Entity {
@@ -71,6 +77,51 @@ export class Asteroid extends Entity {
     super(id, "asteroid", x, y);
   }
   update(): void {}
+}
+
+export class SpaceStation extends Entity {
+  callSign: string;
+  hull = 800;
+  constructor(id: number, x: number, y: number, callSign: string) {
+    super(id, "station", x, y);
+    this.callSign = callSign;
+  }
+  update(): void {}
+  override state(): EntityState {
+    return { ...super.state(), callSign: this.callSign, faction: "friendly" };
+  }
+}
+
+export class Nebula extends Entity {
+  constructor(id: number, x: number, y: number, public radius: number) {
+    super(id, "nebula", x, y);
+  }
+  update(): void {}
+  override state(): EntityState {
+    return { ...super.state(), radius: this.radius };
+  }
+}
+
+export class Mine extends Entity {
+  constructor(id: number, x: number, y: number) {
+    super(id, "mine", x, y);
+  }
+  update(_dt: number, world: World): void {
+    for (const e of world.allEntities()) {
+      if (!(e instanceof MovingShip) || e.dead) continue;
+      if (dist(this, e) <= MINE_TRIGGER) {
+        this.dead = true;
+        world.events.push({ k: "boom", x: this.x, y: this.y, big: true });
+        for (const t of world.allEntities()) {
+          if (t instanceof MovingShip && !t.dead && dist(this, t) <= MINE_BLAST) {
+            const falloff = 1 - dist(this, t) / MINE_BLAST;
+            t.takeDamage(MINE_DMG * Math.max(0.3, falloff), bearing(t, this), world);
+          }
+        }
+        return;
+      }
+    }
+  }
 }
 
 abstract class MovingShip extends Entity {
@@ -108,6 +159,7 @@ export class PlayerShip extends MovingShip {
   shieldFront = 100;
   shieldRear = 100;
   targetId: number | null = null;
+  dockedTo: number | null = null;
   scanTargetId: number | null = null;
   scanProgress = 0;
   tubes: TubeSim[] = [
@@ -133,6 +185,30 @@ export class PlayerShip extends MovingShip {
   setShields(up: boolean): void {
     this.shieldsUp = up;
   }
+  nearestDockable(world: World): SpaceStation | null {
+    let best: SpaceStation | null = null;
+    for (const e of world.allEntities()) {
+      if (e instanceof SpaceStation && dist(this, e) <= DOCK_RANGE) {
+        if (!best || dist(this, e) < dist(this, best)) best = e;
+      }
+    }
+    return best;
+  }
+
+  requestDock(world: World): boolean {
+    if (this.dockedTo != null || this.speed > DOCK_MAX_SPEED) return false;
+    const st = this.nearestDockable(world);
+    if (!st) return false;
+    this.dockedTo = st.id;
+    this.impulse = 0;
+    this.speed = 0;
+    return true;
+  }
+
+  undock(): void {
+    this.dockedTo = null;
+  }
+
   startScan(id: number, world: World): boolean {
     const target = world.get(id);
     if (!target || !(target instanceof CpuShip) || target.scanned) return false;
@@ -164,6 +240,18 @@ export class PlayerShip extends MovingShip {
 
   override update(dt: number, world: World): void {
     this.engineering.tick(dt);
+    if (this.dockedTo != null) {
+      // Atracada: inmóvil; reparación y recarga
+      this.impulse = 0;
+      this.speed = 0;
+      this.hull = Math.min(this.spec.hullMax, this.hull + 3 * dt);
+      this.engineering.energy = Math.min(1000, this.engineering.energy + 25 * dt);
+      for (const name of Object.keys(this.engineering.systems) as (keyof typeof this.engineering.systems)[]) {
+        const sys = this.engineering.systems[name];
+        sys.health = Math.min(1, sys.health + 0.015 * dt);
+      }
+      return;
+    }
     // Eficacias de ingeniería: ajustan specs efectivos antes de mover
     const baseSpec = this.spec;
     const effImpulse = this.engineering.effectiveness("impulse");
@@ -243,7 +331,7 @@ export class PlayerShip extends MovingShip {
     return this.dead;
   }
 
-  playerState(): PlayerShipState {
+  playerState(world: World): PlayerShipState {
     return {
       x: this.x, y: this.y,
       heading: this.heading, targetHeading: this.targetHeading,
@@ -262,6 +350,8 @@ export class PlayerShip extends MovingShip {
       scan: this.scanTargetId != null
         ? { targetId: this.scanTargetId, progress: Math.min(1, this.scanProgress) }
         : null,
+      docked: this.dockedTo != null,
+      canDock: this.dockedTo == null && this.speed <= DOCK_MAX_SPEED && this.nearestDockable(world) != null,
     };
   }
 
@@ -425,6 +515,28 @@ export class World {
     return a;
   }
 
+  allEntities(): IterableIterator<Entity> {
+    return this.entities.values();
+  }
+
+  addStation(x: number, y: number, callSign: string): SpaceStation {
+    const st = new SpaceStation(this.allocId(), x, y, callSign);
+    this.entities.set(st.id, st);
+    return st;
+  }
+
+  addNebula(x: number, y: number, radius: number): Nebula {
+    const n = new Nebula(this.allocId(), x, y, radius);
+    this.entities.set(n.id, n);
+    return n;
+  }
+
+  addMine(x: number, y: number): Mine {
+    const m = new Mine(this.allocId(), x, y);
+    this.entities.set(m.id, m);
+    return m;
+  }
+
   addCpuShip(x: number, y: number, callSign: string): CpuShip {
     const s = new CpuShip(this.allocId(), x, y, callSign, this.rng);
     this.entities.set(s.id, s);
@@ -458,11 +570,31 @@ export class World {
     }
   }
 
+  /** ¿Está una posición dentro de alguna nebulosa? */
+  inNebula(p: { x: number; y: number }): boolean {
+    for (const e of this.entities.values()) {
+      if (e instanceof Nebula && dist(e, p) <= e.radius) return true;
+    }
+    return false;
+  }
+
+  /** Visibilidad desde la nave del jugador (niebla de guerra servida desde el servidor). */
+  private visibleTo(viewer: PlayerShip, e: Entity): boolean {
+    if (e === viewer) return true;
+    if (e.kind === "mine") return dist(viewer, e) <= NEBULA_SIGHT;
+    if (e instanceof MovingShip || e.kind === "missile") {
+      if (this.inNebula(e) && dist(viewer, e) > NEBULA_SIGHT) return false;
+    }
+    return true;
+  }
+
   snapshot(): WorldSnapshot {
     const snap = {
       time: this.time,
-      ship: this.ship.playerState(),
-      entities: [...this.entities.values()].filter((e) => !e.dead).map((e) => e.state()),
+      ship: this.ship.playerState(this),
+      entities: [...this.entities.values()]
+        .filter((e) => !e.dead && this.visibleTo(this.ship, e))
+        .map((e) => e.state()),
       events: this.events,
       waypoints: [...this.waypoints],
     };
@@ -471,15 +603,23 @@ export class World {
   }
 }
 
-/** Escenario de prueba: cinturón de asteroides + 2 hostiles en patrulla. */
+/** Escenario de prueba: estación, nebulosas, minas, asteroides y 2 hostiles. */
 export function createTestScenario(seed = 42): World {
   const w = new World(seed);
+  w.addStation(-1800, -1400, "DS-1");
   for (let i = 0; i < 24; i++) {
     const ang = w.rng() * Math.PI * 2;
     const d = 2500 + w.rng() * 4000;
     w.addAsteroid(Math.sin(ang) * d, Math.cos(ang) * d);
   }
-  w.addCpuShip(4000, 3000, "KR-7");
-  w.addCpuShip(-3500, 4500, "KR-12");
+  w.addNebula(6500, 1500, 3000);
+  w.addNebula(-4000, 7000, 2600);
+  // Campo de minas en el flanco de la nebulosa este
+  for (let i = 0; i < 8; i++) {
+    const ang = (i / 8) * Math.PI * 2;
+    w.addMine(6500 + Math.sin(ang) * 3600, 1500 + Math.cos(ang) * 3600);
+  }
+  w.addCpuShip(7000, 1800, "KR-7");   // escondida en la nebulosa
+  w.addCpuShip(-2500, 3200, "KR-12"); // patrulla a la vista
   return w;
 }

@@ -183,3 +183,54 @@ describe("Comms: waypoints y rendición", () => {
     expect(w.hostilesAlive).toBe(0);
   });
 });
+
+describe("Mundo: estaciones, nebulosas y minas", () => {
+  it("atraque: requiere cercanía y poca velocidad; repara y recarga", () => {
+    const w = new World(8);
+    w.addStation(0, 500, "DS-T");
+    w.ship.hull = 100;
+    w.ship.engineering.energy = 200;
+    w.ship.speed = 100;
+    expect(w.ship.requestDock(w)).toBe(false); // demasiado rápido
+    w.ship.speed = 0;
+    expect(w.ship.requestDock(w)).toBe(true);
+    for (let i = 0; i < 20 * 10; i++) w.tick();
+    expect(w.ship.hull).toBeGreaterThan(120);
+    expect(w.ship.engineering.energy).toBeGreaterThan(400);
+    expect(w.snapshot().ship.docked).toBe(true);
+    w.ship.undock();
+    expect(w.snapshot().ship.docked).toBe(false);
+  });
+
+  it("nebulosa: oculta contactos a más de 5 km, los revela de cerca", () => {
+    const w = new World(8);
+    w.addNebula(0, 8000, 2000);
+    const c = w.addCpuShip(0, 8000, "KR-N");
+    c.impulse = 0;
+    expect(w.snapshot().entities.some((e) => e.id === c.id)).toBe(false);
+    w.ship.y = 4000; // a 4 km del contacto
+    expect(w.snapshot().entities.some((e) => e.id === c.id)).toBe(true);
+  });
+
+  it("mina: explota por proximidad y daña", () => {
+    const w = new World(8);
+    w.addMine(0, 900);
+    const before = w.ship.shieldFront + w.ship.shieldRear + w.ship.hull;
+    w.ship.setImpulse(1);
+    let boom = false;
+    for (let i = 0; i < 20 * 30 && !boom; i++) {
+      w.tick();
+      boom = w.snapshot().events.some?.((ev) => ev.k === "boom") || boom;
+    }
+    expect(boom).toBe(true);
+    expect(w.ship.shieldFront + w.ship.shieldRear + w.ship.hull).toBeLessThan(before);
+  });
+
+  it("las minas no se ven a más de 5 km", () => {
+    const w = new World(8);
+    const m = w.addMine(0, 7000);
+    expect(w.snapshot().entities.some((e) => e.id === m.id)).toBe(false);
+    w.ship.y = 3000;
+    expect(w.snapshot().entities.some((e) => e.id === m.id)).toBe(true);
+  });
+});
