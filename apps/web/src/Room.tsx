@@ -70,6 +70,13 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
             setEvents([]);
             break;
           case "error":
+            if (msg.code === "not_found" || msg.code === "join_failed") {
+              // Error fatal: la sala no existe o no podemos entrar. No reintentar.
+              closedByUser.current = true;
+              sessionStorage.removeItem(`resume:${code}`);
+              onLeave();
+              return;
+            }
             setError(msg.message);
             break;
         }
