@@ -1,5 +1,6 @@
 import type { EntityKind, EntityState, PlayerShipState, WorldSnapshot, SimEvent, TubeSim } from "./types.js";
 import { EngineeringSuite } from "./systems.js";
+import { TEMPLATES, type FactionName, type ShipTemplate, type TemplateName } from "./templates.js";
 
 /** RNG determinista (mulberry32) para escenarios reproducibles. */
 export function makeRng(seed: number): () => number {
@@ -30,12 +31,13 @@ interface ShipSpec {
   hullMax: number;
 }
 
-const PLAYER_SPEC: ShipSpec = { maxSpeed: 125, turnRate: 12, accel: 25, hullMax: 250 };
-const CPU_SPEC: ShipSpec = { maxSpeed: 90, turnRate: 8, accel: 20, hullMax: 70 };
+function specFrom(t: ShipTemplate): ShipSpec {
+  return { maxSpeed: t.maxSpeed, turnRate: t.turnRate, accel: t.accel, hullMax: t.hullMax };
+}
 
-const PLAYER_BEAM = { range: 1500, arc: 100, cycle: 6, dmg: 9 };
-const CPU_BEAM = { range: 1300, cycle: 5, dmg: 6 };
 const TUBE_LOAD_TIME = 8;
+const WARP_SPEED_PER_LEVEL = 600;
+const WARP_ENERGY_PER_LEVEL = 6; // energía/s por nivel
 const SCAN_TIME = 6;
 const SCAN_RANGE = 12000;
 const DOCK_RANGE = 1000;
@@ -153,24 +155,34 @@ abstract class MovingShip extends Entity {
 
 export class PlayerShip extends MovingShip {
   callSign: string;
+  template: ShipTemplate;
   engineering = new EngineeringSuite();
   shieldsUp = true;
-  shieldMax = 100;
-  shieldFront = 100;
-  shieldRear = 100;
+  shieldMax: number;
+  shieldFront: number;
+  shieldRear: number;
   targetId: number | null = null;
   dockedTo: number | null = null;
   scanTargetId: number | null = null;
   scanProgress = 0;
-  tubes: TubeSim[] = [
-    { state: "empty", t: 0 },
-    { state: "empty", t: 0 },
-  ];
+  warp = 0;
+  tubes: TubeSim[];
   beamCd = 0;
 
-  constructor(id: number, x: number, y: number, callSign = "ARTEMIS") {
-    super(id, "player", x, y, PLAYER_SPEC);
+  constructor(id: number, x: number, y: number, callSign = "ARTEMIS", templateName: TemplateName = "Atlantis") {
+    const tpl: ShipTemplate = TEMPLATES[templateName];
+    super(id, "player", x, y, specFrom(tpl));
+    this.template = tpl;
     this.callSign = callSign;
+    this.shieldMax = Math.max(tpl.shieldFront ?? 100, tpl.shieldRear ?? 100);
+    this.shieldFront = tpl.shieldFront ?? 100;
+    this.shieldRear = tpl.shieldRear ?? 100;
+    this.tubes = Array.from({ length: tpl.tubes ?? 0 }, () => ({ state: "empty" as const, t: 0 }));
+  }
+
+  setWarp(level: number): void {
+    if (!this.template.hasWarp || this.dockedTo != null) return;
+    this.warp = Math.max(0, Math.min(4, Math.round(level)));
   }
 
   setImpulse(v: number): void {
@@ -256,11 +268,25 @@ export class PlayerShip extends MovingShip {
     const baseSpec = this.spec;
     const effImpulse = this.engineering.effectiveness("impulse");
     const effManeuver = this.engineering.effectiveness("maneuver");
-    this.spec = {
-      ...baseSpec,
-      maxSpeed: baseSpec.maxSpeed * Math.min(1.5, effImpulse),
-      turnRate: baseSpec.turnRate * Math.min(1.5, effManeuver),
-    };
+    if (this.warp > 0) {
+      // Warp: velocidad masiva, giro torpe, drenaje de energía
+      const effWarp = Math.min(1.5, this.engineering.effectiveness("warp"));
+      const drained = this.engineering.drain(WARP_ENERGY_PER_LEVEL * this.warp * dt);
+      if (!drained) this.warp = 0;
+      this.spec = {
+        ...baseSpec,
+        maxSpeed: WARP_SPEED_PER_LEVEL * this.warp * effWarp,
+        turnRate: baseSpec.turnRate * 0.25,
+        accel: 220,
+      };
+      this.impulse = 1;
+    } else {
+      this.spec = {
+        ...baseSpec,
+        maxSpeed: baseSpec.maxSpeed * Math.min(1.5, effImpulse),
+        turnRate: baseSpec.turnRate * Math.min(1.5, effManeuver),
+      };
+    }
     super.update(dt);
     this.spec = baseSpec;
     // Escudos: recarga lenta si están arriba
@@ -283,14 +309,15 @@ export class PlayerShip extends MovingShip {
     // Rayos automáticos contra el blanco seleccionado
     const effBeams = Math.max(0.1, Math.min(2, this.engineering.effectiveness("beams")));
     this.beamCd = Math.max(0, this.beamCd - dt * effBeams);
-    if (this.targetId != null && this.beamCd <= 0) {
+    const beam = this.template.beam;
+    if (beam && this.targetId != null && this.beamCd <= 0) {
       const target = world.get(this.targetId);
-      if (target && target instanceof MovingShip && dist(this, target) <= PLAYER_BEAM.range) {
+      if (target && target instanceof MovingShip && dist(this, target) <= beam.range) {
         const rel = Math.abs(angleDiff(this.heading, bearing(this, target)));
-        if (rel <= PLAYER_BEAM.arc / 2) {
-          this.beamCd = PLAYER_BEAM.cycle;
+        if (rel <= beam.arc / 2) {
+          this.beamCd = beam.cycle;
           world.events.push({ k: "beam", fx: this.x, fy: this.y, tx: target.x, ty: target.y, hostile: false });
-          target.takeDamage(PLAYER_BEAM.dmg, bearing(target, this), world);
+          target.takeDamage(beam.dmg, bearing(target, this), world);
         }
       }
     }
@@ -345,13 +372,15 @@ export class PlayerShip extends MovingShip {
         state: t.state,
         progress: t.state === "loading" ? t.t / TUBE_LOAD_TIME : t.state === "loaded" ? 1 : 0,
       })),
-      beamCooldown: this.beamCd / PLAYER_BEAM.cycle,
+      beamCooldown: this.template.beam ? this.beamCd / this.template.beam.cycle : 0,
       ...this.engineering.snapshot(),
       scan: this.scanTargetId != null
         ? { targetId: this.scanTargetId, progress: Math.min(1, this.scanProgress) }
         : null,
       docked: this.dockedTo != null,
       canDock: this.dockedTo == null && this.speed <= DOCK_MAX_SPEED && this.nearestDockable(world) != null,
+      warp: this.warp,
+      hasWarp: Boolean(this.template.hasWarp),
     };
   }
 
@@ -360,6 +389,7 @@ export class PlayerShip extends MovingShip {
       ...super.state(),
       callSign: this.callSign,
       faction: "friendly",
+      typeName: this.template.name,
       hullFrac: this.hull / this.spec.hullMax,
       shieldFrac: (this.shieldFront + this.shieldRear) / (2 * this.shieldMax),
     };
@@ -368,17 +398,31 @@ export class PlayerShip extends MovingShip {
 
 export class CpuShip extends MovingShip {
   callSign: string;
+  template: ShipTemplate;
+  factionName: FactionName;
   scanned = false;
   surrendered = false;
-  shield = 40;
-  shieldMax = 40;
+  shield: number;
+  shieldMax: number;
   private nextDecision = 0;
   private beamCd = 0;
 
-  constructor(id: number, x: number, y: number, callSign: string, private rng: () => number) {
-    super(id, "cpu", x, y, CPU_SPEC);
+  constructor(
+    id: number, x: number, y: number, callSign: string, private rng: () => number,
+    templateName: TemplateName = "Phobos T3", factionName: FactionName = "Kraylor",
+  ) {
+    const tpl: ShipTemplate = TEMPLATES[templateName];
+    super(id, "cpu", x, y, specFrom(tpl));
+    this.template = tpl;
     this.callSign = callSign;
+    this.factionName = factionName;
+    this.shield = tpl.shield ?? 40;
+    this.shieldMax = tpl.shield ?? 40;
     this.impulse = 0.5;
+  }
+
+  get hostile(): boolean {
+    return this.factionName === "Kraylor" && !this.surrendered;
   }
 
   override update(dt: number, world: World): void {
@@ -395,15 +439,16 @@ export class CpuShip extends MovingShip {
       super.update(dt);
       return;
     }
-    if (d < 4500) {
+    const beam = this.template.beam;
+    if (this.hostile && beam && d < 4500) {
       // Modo ataque: perseguir y disparar
       this.targetHeading = bearing(this, player);
       this.impulse = d > 900 ? 0.8 : 0.3;
       this.beamCd = Math.max(0, this.beamCd - dt);
-      if (d <= CPU_BEAM.range && this.beamCd <= 0) {
-        this.beamCd = CPU_BEAM.cycle;
+      if (d <= beam.range && this.beamCd <= 0) {
+        this.beamCd = beam.cycle;
         world.events.push({ k: "beam", fx: this.x, fy: this.y, tx: player.x, ty: player.y, hostile: true });
-        player.takeDamage(CPU_BEAM.dmg, bearing(player, this), world);
+        player.takeDamage(beam.dmg, bearing(player, this), world);
       }
     } else {
       this.nextDecision -= dt;
@@ -436,7 +481,8 @@ export class CpuShip extends MovingShip {
     return {
       ...super.state(),
       callSign: this.callSign,
-      faction: this.surrendered ? "neutral" : "hostile",
+      faction: this.hostile ? "hostile" : "neutral",
+      typeName: this.template.name + " · " + this.factionName,
       hullFrac: this.hull / this.spec.hullMax,
       shieldFrac: this.shield / this.shieldMax,
       scanned: true,
@@ -537,8 +583,8 @@ export class World {
     return m;
   }
 
-  addCpuShip(x: number, y: number, callSign: string): CpuShip {
-    const s = new CpuShip(this.allocId(), x, y, callSign, this.rng);
+  addCpuShip(x: number, y: number, callSign: string, template: TemplateName = "Phobos T3", faction: FactionName = "Kraylor"): CpuShip {
+    const s = new CpuShip(this.allocId(), x, y, callSign, this.rng, template, faction);
     this.entities.set(s.id, s);
     return s;
   }
@@ -553,7 +599,7 @@ export class World {
   get hostilesAlive(): number {
     let n = 0;
     for (const e of this.entities.values()) {
-      if (e instanceof CpuShip && !e.dead && !e.surrendered) n++;
+      if (e instanceof CpuShip && !e.dead && e.hostile) n++;
     }
     return n;
   }
@@ -619,7 +665,8 @@ export function createTestScenario(seed = 42): World {
     const ang = (i / 8) * Math.PI * 2;
     w.addMine(6500 + Math.sin(ang) * 3600, 1500 + Math.cos(ang) * 3600);
   }
-  w.addCpuShip(7000, 1800, "KR-7");   // escondida en la nebulosa
-  w.addCpuShip(-2500, 3200, "KR-12"); // patrulla a la vista
+  w.addCpuShip(7000, 1800, "KR-7", "Phobos T3", "Kraylor");   // escondida en la nebulosa
+  w.addCpuShip(-2500, 3200, "KR-12", "Adder MK5", "Kraylor");  // cazador rápido a la vista
+  w.addCpuShip(-900, -2600, "FT-3", "Flavia Falcon", "Independent"); // carguero civil
   return w;
 }

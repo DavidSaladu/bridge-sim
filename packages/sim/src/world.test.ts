@@ -112,7 +112,9 @@ describe("Combate", () => {
 
   it("los hostiles atacan al jugador y los escudos encajan el daño", () => {
     const w = new World(5);
-    w.addCpuShip(0, 1000, "KR-A");
+    const a = w.addCpuShip(0, 1000, "KR-A");
+    a.heading = 180; a.targetHeading = 180; // encarado al jugador
+    w.ship.engineering.setPower("shields", 0); // sin recarga, para medir el impacto
     const startShield = w.ship.shieldFront + w.ship.shieldRear;
     for (let i = 0; i < 20 * 6; i++) w.tick();
     expect(w.ship.shieldFront + w.ship.shieldRear).toBeLessThan(startShield);
@@ -121,7 +123,8 @@ describe("Combate", () => {
 
   it("sin escudos, el casco recibe daño y la nave puede morir", () => {
     const w = new World(5);
-    w.addCpuShip(0, 1000, "KR-B");
+    const b = w.addCpuShip(0, 1000, "KR-B");
+    b.heading = 180; b.targetHeading = 180;
     w.ship.setShields(false);
     w.ship.hull = 10;
     for (let i = 0; i < 20 * 12 && !w.playerDead; i++) w.tick();
@@ -232,5 +235,56 @@ describe("Mundo: estaciones, nebulosas y minas", () => {
     expect(w.snapshot().entities.some((e) => e.id === m.id)).toBe(false);
     w.ship.y = 3000;
     expect(w.snapshot().entities.some((e) => e.id === m.id)).toBe(true);
+  });
+});
+
+describe("Plantillas, facciones y warp", () => {
+  it("las plantillas aplican stats distintos", () => {
+    const w = new World(9);
+    const adder = w.addCpuShip(0, 2000, "AD", "Adder MK5", "Kraylor");
+    const flavia = w.addCpuShip(0, 4000, "FL", "Flavia Falcon", "Independent");
+    expect(adder.spec.maxSpeed).toBe(110);
+    expect(flavia.spec.maxSpeed).toBe(60);
+    expect(flavia.hostile).toBe(false);
+    expect(adder.hostile).toBe(true);
+  });
+
+  it("el carguero neutral no ataca ni bloquea la victoria", () => {
+    const w = new World(9);
+    const fl = w.addCpuShip(0, 800, "FL", "Flavia Falcon", "Independent");
+    fl.heading = 180; fl.targetHeading = 180;
+    w.ship.engineering.setPower("shields", 0);
+    const start = w.ship.shieldFront + w.ship.shieldRear;
+    for (let i = 0; i < 20 * 8; i++) w.tick();
+    expect(w.ship.shieldFront + w.ship.shieldRear).toBe(start);
+    expect(w.hostilesAlive).toBe(0);
+  });
+
+  it("el escaneo revela la clase de nave y su facción", () => {
+    const w = new World(9);
+    const c = w.addCpuShip(0, 1000, "KR-T", "Phobos T3", "Kraylor");
+    c.scanned = true;
+    const e = w.snapshot().entities.find((x) => x.id === c.id)!;
+    expect(e.typeName).toBe("Phobos T3 · Kraylor");
+  });
+
+  it("warp: multiplica la velocidad y drena energía; sin energía cae a 0", () => {
+    const w = new World(9);
+    w.ship.setWarp(2);
+    for (let i = 0; i < 20 * 10; i++) w.tick();
+    expect(w.ship.speed).toBeGreaterThan(800);
+    expect(w.ship.engineering.energy).toBeLessThan(1000 - 100);
+    w.ship.engineering.energy = 0.5;
+    for (let i = 0; i < 20 * 2; i++) w.tick();
+    expect(w.ship.warp).toBe(0);
+  });
+
+  it("no se puede activar warp atracado", () => {
+    const w = new World(9);
+    w.addStation(0, 500, "DS");
+    w.ship.speed = 0;
+    w.ship.requestDock(w);
+    w.ship.setWarp(3);
+    expect(w.ship.warp).toBe(0);
   });
 });

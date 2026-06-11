@@ -235,6 +235,7 @@ export class Room {
           }
         }
         if (msg.cmd === "undock") ship.undock();
+        if (msg.cmd === "setWarp" && typeof msg.value === "number") ship.setWarp(msg.value);
         break;
       }
       case "engineering": {

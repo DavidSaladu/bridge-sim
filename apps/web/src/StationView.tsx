@@ -250,6 +250,7 @@ function ScienceView({ snap, send, events }: { snap: GameSnap; send: (m: object)
                 <b style={{ color: "#facc15" }}>{sel.callSign ?? "Contacto desconocido"}</b>{" "}
                 {sel.scanned === false && <span className="muted">(sin escanear)</span>}
               </p>
+              {sel.typeName && <p className="muted" style={{ margin: "0.25rem 0" }}>{sel.typeName}</p>}
               <p className="muted" style={{ margin: "0.25rem 0" }}>
                 Distancia {(distOf(sel) / 1000).toFixed(1)} km · Marcación {bearingOf(sel)}°
               </p>
@@ -433,6 +434,32 @@ function HelmView({ snap, send, events }: { snap: GameSnap; send: (m: object) =>
               </button>
             ))}
           </div>
+          {ship.hasWarp && (
+            <div style={{ marginTop: "0.75rem" }}>
+              <label className="muted">Warp</label>
+              <div className="row" style={{ marginTop: "0.25rem" }}>
+                {[0, 1, 2, 3, 4].map((lvl) => (
+                  <button
+                    key={lvl}
+                    onClick={() => send({ t: "helm", cmd: "setWarp", value: lvl })}
+                    style={{
+                      padding: "0.25rem 0.7rem",
+                      fontSize: "0.85rem",
+                      background: ship.warp === lvl ? "#7c3aed" : undefined,
+                      borderColor: ship.warp > 0 ? "#a78bfa" : undefined,
+                    }}
+                  >
+                    {lvl === 0 ? "OFF" : "W" + lvl}
+                  </button>
+                ))}
+              </div>
+              {ship.warp > 0 && (
+                <p className="muted" style={{ fontSize: "0.78rem", margin: "0.3rem 0 0", color: "#a78bfa" }}>
+                  Warp {ship.warp}: drenando energía ({Math.round(ship.energy)} ⚡). Giro reducido.
+                </p>
+              )}
+            </div>
+          )}
           <div style={{ marginTop: "0.75rem" }}>
             {ship.docked ? (
               <button

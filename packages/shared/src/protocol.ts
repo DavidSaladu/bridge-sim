@@ -49,9 +49,10 @@ export interface SnapEntity {
   shieldFrac?: number;
   scanned?: boolean;
   radius?: number;
+  typeName?: string;
 }
 
-export const SHIP_SYSTEMS = ["reactor", "beams", "missiles", "maneuver", "impulse", "shields"] as const;
+export const SHIP_SYSTEMS = ["reactor", "beams", "missiles", "maneuver", "impulse", "warp", "shields"] as const;
 export type ShipSystem = (typeof SHIP_SYSTEMS)[number];
 
 export const SYSTEM_LABELS: Record<ShipSystem, string> = {
@@ -60,6 +61,7 @@ export const SYSTEM_LABELS: Record<ShipSystem, string> = {
   missiles: "Misiles",
   maneuver: "Maniobra",
   impulse: "Impulso",
+  warp: "Warp",
   shields: "Escudos",
 };
 
@@ -100,6 +102,8 @@ export interface SnapShip {
   scan: { targetId: number; progress: number } | null;
   docked: boolean;
   canDock: boolean;
+  warp: number;
+  hasWarp: boolean;
 }
 
 export type SnapEvent =
@@ -132,6 +136,7 @@ export type ClientMsg =
   | { t: "helm"; cmd: "setHeading"; value: number }
   | { t: "helm"; cmd: "dock" }
   | { t: "helm"; cmd: "undock" }
+  | { t: "helm"; cmd: "setWarp"; value: number }
   | { t: "weapons"; cmd: "setTarget"; id: number | null }
   | { t: "weapons"; cmd: "loadTube"; tube: number }
   | { t: "weapons"; cmd: "fireTube"; tube: number }

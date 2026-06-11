@@ -12,6 +12,7 @@ export interface EntityState {
   shieldFrac?: number;
   scanned?: boolean;
   radius?: number;
+  typeName?: string;
 }
 
 export type TubeStateSim = "empty" | "loading" | "loaded";
@@ -46,6 +47,8 @@ export interface PlayerShipState {
   scan: { targetId: number; progress: number } | null;
   docked: boolean;
   canDock: boolean;
+  warp: number;
+  hasWarp: boolean;
 }
 
 export type SimEvent =

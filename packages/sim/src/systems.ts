@@ -1,4 +1,4 @@
-export const SYSTEMS = ["reactor", "beams", "missiles", "maneuver", "impulse", "shields"] as const;
+export const SYSTEMS = ["reactor", "beams", "missiles", "maneuver", "impulse", "warp", "shields"] as const;
 export type SystemName = (typeof SYSTEMS)[number];
 
 export interface SystemState {
@@ -48,6 +48,13 @@ export class EngineeringSuite {
 
   setRepair(system: SystemName | null): void {
     this.repairing = system;
+  }
+
+  /** Drena energía directamente (warp, salto…). Devuelve false si no alcanza. */
+  drain(amount: number): boolean {
+    if (this.energy < amount) return false;
+    this.energy -= amount;
+    return true;
   }
 
   /** Eficacia real de un sistema: potencia limitada por salud (y por energía agotada). */
