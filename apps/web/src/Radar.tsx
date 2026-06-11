@@ -48,6 +48,28 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
     ctx.strokeStyle = "rgba(56,189,248,0.12)";
     ctx.stroke();
 
+    // Corona de grados (000 = norte, sentido horario)
+    const step = size >= 400 ? 30 : 90;
+    ctx.font = size >= 400 ? "9px monospace" : "8px monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (let deg = 0; deg < 360; deg += 10) {
+      const a = (deg * Math.PI) / 180;
+      const isMajor = deg % step === 0;
+      const r1 = c - (isMajor ? 8 : 4);
+      ctx.strokeStyle = isMajor ? "rgba(56,189,248,0.5)" : "rgba(56,189,248,0.2)";
+      ctx.beginPath();
+      ctx.moveTo(c + Math.sin(a) * r1, c - Math.cos(a) * r1);
+      ctx.lineTo(c + Math.sin(a) * (c - 1), c - Math.cos(a) * (c - 1));
+      ctx.stroke();
+      if (isMajor && size >= 300) {
+        ctx.fillStyle = "rgba(125,211,252,0.75)";
+        ctx.fillText(String(deg).padStart(3, "0"), c + Math.sin(a) * (c - 18), c - Math.cos(a) * (c - 18));
+      }
+    }
+    ctx.textAlign = "start";
+    ctx.textBaseline = "alphabetic";
+
     const toScreen = (ex: number, ey: number): [number, number] | null => {
       const dx = ex - ship.x;
       const dy = ey - ship.y;
@@ -129,20 +151,29 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
       }
     }
 
-    // Waypoints: rombos amarillos numerados
+    // Waypoints: rombos amarillos numerados; si caen fuera, marcador en el borde
     snap.waypoints?.forEach((w, i) => {
-      const pt = toScreen(w.x, w.y);
-      if (!pt) return;
-      const [sx, sy] = pt;
+      const dx = w.x - ship.x;
+      const dy = w.y - ship.y;
+      const d = Math.hypot(dx, dy);
+      const inside = d <= range;
+      let sx: number, sy: number;
+      if (inside) {
+        sx = c + dx * scale;
+        sy = c - dy * scale;
+      } else {
+        sx = c + (dx / d) * (c - 26);
+        sy = c - (dy / d) * (c - 26);
+      }
       ctx.save();
       ctx.translate(sx, sy);
       ctx.rotate(Math.PI / 4);
-      ctx.strokeStyle = "#facc15";
+      ctx.strokeStyle = inside ? "#facc15" : "rgba(250,204,21,0.55)";
       ctx.strokeRect(-4, -4, 8, 8);
       ctx.restore();
-      ctx.fillStyle = "#facc15";
+      ctx.fillStyle = inside ? "#facc15" : "rgba(250,204,21,0.55)";
       ctx.font = "10px monospace";
-      ctx.fillText("W" + (i + 1), sx + 7, sy - 6);
+      ctx.fillText("W" + (i + 1) + (inside ? "" : " " + (d / 1000).toFixed(1) + "km"), sx + 7, sy - 6);
     });
 
     const tr = (ship.targetHeading * Math.PI) / 180;
