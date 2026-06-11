@@ -1,4 +1,4 @@
-export type EntityKind = "player" | "cpu" | "asteroid" | "station";
+export type EntityKind = "player" | "cpu" | "asteroid" | "station" | "missile";
 
 export interface EntityState {
   id: number;
@@ -8,6 +8,15 @@ export interface EntityState {
   heading: number;
   callSign?: string;
   faction?: "friendly" | "neutral" | "hostile";
+  hullFrac?: number;
+  shieldFrac?: number;
+}
+
+export type TubeStateSim = "empty" | "loading" | "loaded";
+
+export interface TubeSim {
+  state: TubeStateSim;
+  t: number;
 }
 
 export interface PlayerShipState {
@@ -19,10 +28,23 @@ export interface PlayerShipState {
   speed: number;
   hull: number;
   hullMax: number;
+  shieldsUp: boolean;
+  shieldFront: number;
+  shieldRear: number;
+  shieldMax: number;
+  targetId: number | null;
+  tubes: { state: TubeStateSim; progress: number }[];
+  beamCooldown: number;
 }
+
+export type SimEvent =
+  | { k: "beam"; fx: number; fy: number; tx: number; ty: number; hostile: boolean }
+  | { k: "boom"; x: number; y: number; big: boolean }
+  | { k: "launch"; x: number; y: number };
 
 export interface WorldSnapshot {
   time: number;
   ship: PlayerShipState;
   entities: EntityState[];
+  events: SimEvent[];
 }

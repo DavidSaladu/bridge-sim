@@ -3,6 +3,7 @@ import type { GameSnap, RoomSnapshot, ServerMsg, Station } from "@bridge/shared"
 import { STATIONS, STATION_LABELS } from "@bridge/shared";
 import { useVoice } from "./useVoice.js";
 import { StationView } from "./StationView.js";
+import type { TimedEvent } from "./Radar.js";
 
 interface ChatLine { fromName: string; text: string; ts: number }
 
@@ -11,6 +12,8 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
   const [selfId, setSelfId] = useState("");
   const [chat, setChat] = useState<ChatLine[]>([]);
   const [snap, setSnap] = useState<GameSnap | null>(null);
+  const [events, setEvents] = useState<TimedEvent[]>([]);
+  const [banner, setBanner] = useState<{ victory: boolean; message: string } | null>(null);
   const [activeStation, setActiveStation] = useState<Station | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
@@ -50,8 +53,21 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
           case "chat":
             setChat((c) => [...c.slice(-200), { fromName: msg.fromName, text: msg.text, ts: msg.ts }]);
             break;
-          case "snap":
+          case "snap": {
             setSnap(msg.snap);
+            if (msg.snap.events.length > 0) {
+              const now = performance.now();
+              setEvents((old) => [
+                ...old.filter((e) => now - e.at < 1000),
+                ...msg.snap.events.map((ev) => ({ ev, at: now })),
+              ]);
+            }
+            break;
+          }
+          case "gameOver":
+            setBanner({ victory: msg.victory, message: msg.message });
+            setSnap(null);
+            setEvents([]);
             break;
           case "error":
             setError(msg.message);
@@ -159,13 +175,27 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
               <span className="muted">teclas 1-{myStations.length} para cambiar</span>
             </div>
           )}
-          <StationView station={shownStation} snap={snap} send={send} />
+          <StationView station={shownStation} snap={snap} send={send} events={events} />
+        </div>
+      )}
+
+      {banner && !playing && (
+        <div
+          className="panel"
+          style={{
+            marginBottom: "1rem",
+            borderColor: banner.victory ? "#4ade80" : "#f87171",
+            textAlign: "center",
+            fontSize: "1.1rem",
+          }}
+        >
+          {banner.victory ? "🏆 " : "💥 "}{banner.message}
         </div>
       )}
 
       {!playing && me?.isHost && (
         <div className="row" style={{ marginBottom: "1rem" }}>
-          <button onClick={() => send({ t: "startGame" })} style={{ fontSize: "1.1rem" }}>
+          <button onClick={() => { setBanner(null); send({ t: "startGame" }); }} style={{ fontSize: "1.1rem" }}>
             ▶ Iniciar partida
           </button>
           <span className="muted">Cuando todos tengan puesto, despegamos.</span>

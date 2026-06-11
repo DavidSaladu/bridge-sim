@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
-import type { GameSnap, SnapEntity } from "@bridge/shared";
+import type { GameSnap, SnapEntity, SnapEvent } from "@bridge/shared";
 
 const DEG = Math.PI / 180;
 /** 1 unidad three = 10 m de juego */
@@ -92,6 +92,7 @@ export class Scene3D {
   private scene = new THREE.Scene();
   private camera: THREE.PerspectiveCamera;
   private tracked = new Map<number, Tracked>();
+  private fx: { obj: THREE.Object3D; born: number; ttl: number; boom?: boolean }[] = [];
   private selfShip: Tracked | null = null;
   private lastSnapAt = 0;
   private raf = 0;
@@ -161,8 +162,36 @@ export class Scene3D {
     this.camera.updateProjectionMatrix();
   }
 
+  private spawnFx(ev: SnapEvent): void {
+    const now = performance.now();
+    if (ev.k === "beam") {
+      const mat = new THREE.LineBasicMaterial({
+        color: ev.hostile ? 0xff4433 : 0x33bbff,
+        transparent: true,
+      });
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(ev.fx * SCALE, 0, -ev.fy * SCALE),
+        new THREE.Vector3(ev.tx * SCALE, 0, -ev.ty * SCALE),
+      ]);
+      const line = new THREE.Line(geo, mat);
+      this.scene.add(line);
+      this.fx.push({ obj: line, born: now, ttl: 350 });
+    } else if (ev.k === "boom") {
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xffaa33,
+        transparent: true,
+      });
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 12), mat);
+      ball.position.set(ev.x * SCALE, 0, -ev.y * SCALE);
+      ball.scale.setScalar(ev.big ? 4 : 2);
+      this.scene.add(ball);
+      this.fx.push({ obj: ball, born: now, ttl: ev.big ? 900 : 600, boom: true });
+    }
+  }
+
   updateSnap(snap: GameSnap): void {
     this.lastSnapAt = performance.now();
+    for (const ev of snap.events) this.spawnFx(ev);
     const seen = new Set<number>();
     for (const e of snap.entities) {
       seen.add(e.id);
@@ -193,6 +222,15 @@ export class Scene3D {
   private buildMesh(e: SnapEntity): THREE.Group {
     if (e.kind === "asteroid") return makeAsteroidMesh(e.id);
     if (e.kind === "player") return makeShipMesh(0x6699cc, 0x33bbff);
+    if (e.kind === "missile") {
+      const g = new THREE.Group();
+      const m = new THREE.Mesh(
+        new THREE.SphereGeometry(0.8, 8, 8),
+        new THREE.MeshStandardMaterial({ color: 0xffcc44, emissive: 0xffaa00, emissiveIntensity: 3 }),
+      );
+      g.add(m);
+      return g;
+    }
     return makeShipMesh(0x884444, 0xff5533);
   }
 
@@ -218,6 +256,20 @@ export class Scene3D {
       this.camera.position.set(p.x - fwd.x * 18, p.y + 7, p.z - fwd.z * 18);
       this.camera.lookAt(p.x + fwd.x * 120, p.y + 2, p.z + fwd.z * 120);
     }
+    // Efectos transitorios
+    const now = performance.now();
+    this.fx = this.fx.filter((f) => {
+      const age = now - f.born;
+      if (age > f.ttl) {
+        this.scene.remove(f.obj);
+        return false;
+      }
+      const k = 1 - age / f.ttl;
+      const mat = (f.obj as THREE.Mesh).material as THREE.Material & { opacity: number };
+      mat.opacity = k;
+      if (f.boom) f.obj.scale.multiplyScalar(1.06);
+      return true;
+    });
     this.composer.render();
   }
 

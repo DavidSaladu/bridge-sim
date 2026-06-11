@@ -158,3 +158,27 @@ describe("Multipuesto", () => {
     room.stop();
   });
 });
+
+describe("Armas y fin de partida", () => {
+  it("comandos weapons solo desde Armamento, y la victoria devuelve al lobby", async () => {
+    const room = new RoomManager().create();
+    const b = fakeOutbox();
+    const r = room.join("Art", b);
+    if (!r.ok) throw new Error("join failed");
+    room.handleMessage(r.id, { t: "takeStation", station: "weapons" });
+    room.handleMessage(r.id, { t: "startGame" });
+
+    // matar a los hostiles directamente para forzar victoria
+    const world = room.world!;
+    for (const e of world.snapshot().entities) {
+      if (e.kind === "cpu") {
+        const cpu = world.get(e.id) as unknown as { takeDamage: (d: number, b: number, w: typeof world) => boolean };
+        cpu.takeDamage(99999, 0, world);
+      }
+    }
+    await new Promise((res) => setTimeout(res, 150));
+    expect(b.msgs.some((m) => m.t === "gameOver" && m.victory)).toBe(true);
+    expect(room.phase).toBe("lobby");
+    expect(room.world).toBeNull();
+  });
+});

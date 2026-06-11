@@ -1,4 +1,4 @@
-import type { EntityKind, EntityState, PlayerShipState, WorldSnapshot } from "./types.js";
+import type { EntityKind, EntityState, PlayerShipState, WorldSnapshot, SimEvent, TubeSim } from "./types.js";
 
 /** RNG determinista (mulberry32) para escenarios reproducibles. */
 export function makeRng(seed: number): () => number {
@@ -14,27 +14,31 @@ export function makeRng(seed: number): () => number {
 
 const DEG = Math.PI / 180;
 
-/** Normaliza un ángulo a [0, 360). */
 export function norm(deg: number): number {
   return ((deg % 360) + 360) % 360;
 }
 
-/** Diferencia angular con signo en [-180, 180]. */
 export function angleDiff(from: number, to: number): number {
   return ((to - from + 540) % 360) - 180;
 }
 
 interface ShipSpec {
-  maxSpeed: number;      // m/s a impulso 1.0
-  turnRate: number;      // grados/s
-  accel: number;         // m/s² de impulso
+  maxSpeed: number;
+  turnRate: number;
+  accel: number;
   hullMax: number;
 }
 
 const PLAYER_SPEC: ShipSpec = { maxSpeed: 125, turnRate: 12, accel: 25, hullMax: 250 };
-const CPU_SPEC: ShipSpec = { maxSpeed: 90, turnRate: 8, accel: 20, hullMax: 100 };
+const CPU_SPEC: ShipSpec = { maxSpeed: 90, turnRate: 8, accel: 20, hullMax: 70 };
 
-abstract class Entity {
+const PLAYER_BEAM = { range: 1500, arc: 100, cycle: 6, dmg: 9 };
+const CPU_BEAM = { range: 1300, cycle: 5, dmg: 6 };
+const TUBE_LOAD_TIME = 8;
+const MISSILE = { speed: 220, turnRate: 100, dmg: 35, life: 40, proximity: 80 };
+
+export abstract class Entity {
+  dead = false;
   constructor(
     public readonly id: number,
     public readonly kind: EntityKind,
@@ -50,6 +54,15 @@ abstract class Entity {
   }
 }
 
+export function dist(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+/** Rumbo desde a hacia b (0 = norte, horario). */
+export function bearing(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  return norm((Math.atan2(b.x - a.x, b.y - a.y) / DEG));
+}
+
 export class Asteroid extends Entity {
   constructor(id: number, x: number, y: number) {
     super(id, "asteroid", x, y);
@@ -57,76 +70,247 @@ export class Asteroid extends Entity {
   update(): void {}
 }
 
-class MovingShip extends Entity {
+abstract class MovingShip extends Entity {
   targetHeading = 0;
-  impulse = 0;       // 0..1 objetivo
-  speed = 0;         // m/s actual
+  impulse = 0;
+  speed = 0;
   hull: number;
 
-  constructor(id: number, kind: EntityKind, x: number, y: number, protected spec: ShipSpec) {
+  constructor(id: number, kind: EntityKind, x: number, y: number, public spec: ShipSpec) {
     super(id, kind, x, y);
     this.hull = spec.hullMax;
   }
 
   update(dt: number, _world?: World): void {
-    // Rotación hacia el rumbo objetivo
     const diff = angleDiff(this.heading, this.targetHeading);
     const maxTurn = this.spec.turnRate * dt;
     this.heading = norm(this.heading + Math.max(-maxTurn, Math.min(maxTurn, diff)));
-    // Aceleración hacia la velocidad objetivo
     const targetSpeed = this.impulse * this.spec.maxSpeed;
     const dv = this.spec.accel * dt;
     if (this.speed < targetSpeed) this.speed = Math.min(targetSpeed, this.speed + dv);
     else this.speed = Math.max(targetSpeed, this.speed - dv);
-    // Avance: heading 0 = norte (+y), sentido horario
     this.x += Math.sin(this.heading * DEG) * this.speed * dt;
     this.y += Math.cos(this.heading * DEG) * this.speed * dt;
   }
+
+  /** Aplica daño. Devuelve true si la nave queda destruida. */
+  abstract takeDamage(dmg: number, fromBearing: number, world: World): boolean;
 }
 
 export class PlayerShip extends MovingShip {
   callSign: string;
+  shieldsUp = true;
+  shieldMax = 100;
+  shieldFront = 100;
+  shieldRear = 100;
+  targetId: number | null = null;
+  tubes: TubeSim[] = [
+    { state: "empty", t: 0 },
+    { state: "empty", t: 0 },
+  ];
+  beamCd = 0;
+
   constructor(id: number, x: number, y: number, callSign = "ARTEMIS") {
     super(id, "player", x, y, PLAYER_SPEC);
     this.callSign = callSign;
   }
+
   setImpulse(v: number): void {
     this.impulse = Math.max(0, Math.min(1, v));
   }
   setTargetHeading(deg: number): void {
     this.targetHeading = norm(deg);
   }
+  setTarget(id: number | null): void {
+    this.targetId = id;
+  }
+  setShields(up: boolean): void {
+    this.shieldsUp = up;
+  }
+  loadTube(i: number): void {
+    const tube = this.tubes[i];
+    if (tube && tube.state === "empty") {
+      tube.state = "loading";
+      tube.t = 0;
+    }
+  }
+  fireTube(i: number, world: World): void {
+    const tube = this.tubes[i];
+    if (!tube || tube.state !== "loaded" || this.targetId == null) return;
+    const target = world.get(this.targetId);
+    if (!target) return;
+    tube.state = "empty";
+    tube.t = 0;
+    world.spawnMissile(this, target.id);
+  }
+
+  override update(dt: number, world: World): void {
+    super.update(dt);
+    // Escudos: recarga lenta si están arriba
+    if (this.shieldsUp) {
+      this.shieldFront = Math.min(this.shieldMax, this.shieldFront + 1.2 * dt);
+      this.shieldRear = Math.min(this.shieldMax, this.shieldRear + 1.2 * dt);
+    }
+    // Tubos
+    for (const tube of this.tubes) {
+      if (tube.state === "loading") {
+        tube.t += dt;
+        if (tube.t >= TUBE_LOAD_TIME) {
+          tube.state = "loaded";
+          tube.t = TUBE_LOAD_TIME;
+        }
+      }
+    }
+    // Rayos automáticos contra el blanco seleccionado
+    this.beamCd = Math.max(0, this.beamCd - dt);
+    if (this.targetId != null && this.beamCd <= 0) {
+      const target = world.get(this.targetId);
+      if (target && target instanceof MovingShip && dist(this, target) <= PLAYER_BEAM.range) {
+        const rel = Math.abs(angleDiff(this.heading, bearing(this, target)));
+        if (rel <= PLAYER_BEAM.arc / 2) {
+          this.beamCd = PLAYER_BEAM.cycle;
+          world.events.push({ k: "beam", fx: this.x, fy: this.y, tx: target.x, ty: target.y, hostile: false });
+          target.takeDamage(PLAYER_BEAM.dmg, bearing(target, this), world);
+        }
+      }
+    }
+    if (this.targetId != null && !world.get(this.targetId)) this.targetId = null;
+  }
+
+  takeDamage(dmg: number, fromBearing: number, world: World): boolean {
+    if (this.shieldsUp) {
+      const rel = Math.abs(angleDiff(this.heading, fromBearing));
+      const front = rel <= 90;
+      const pool = front ? "shieldFront" : "shieldRear";
+      const absorbed = Math.min(this[pool], dmg);
+      this[pool] -= absorbed;
+      dmg -= absorbed;
+    }
+    if (dmg > 0) this.hull = Math.max(0, this.hull - dmg);
+    if (this.hull <= 0 && !this.dead) {
+      this.dead = true;
+      world.events.push({ k: "boom", x: this.x, y: this.y, big: true });
+    }
+    return this.dead;
+  }
+
   playerState(): PlayerShipState {
     return {
       x: this.x, y: this.y,
       heading: this.heading, targetHeading: this.targetHeading,
       impulse: this.impulse, speed: this.speed,
       hull: this.hull, hullMax: this.spec.hullMax,
+      shieldsUp: this.shieldsUp,
+      shieldFront: Math.round(this.shieldFront), shieldRear: Math.round(this.shieldRear),
+      shieldMax: this.shieldMax,
+      targetId: this.targetId,
+      tubes: this.tubes.map((t) => ({
+        state: t.state,
+        progress: t.state === "loading" ? t.t / TUBE_LOAD_TIME : t.state === "loaded" ? 1 : 0,
+      })),
+      beamCooldown: this.beamCd / PLAYER_BEAM.cycle,
     };
   }
+
   override state(): EntityState {
-    return { ...super.state(), callSign: this.callSign, faction: "friendly" };
+    return {
+      ...super.state(),
+      callSign: this.callSign,
+      faction: "friendly",
+      hullFrac: this.hull / this.spec.hullMax,
+      shieldFrac: (this.shieldFront + this.shieldRear) / (2 * this.shieldMax),
+    };
   }
 }
 
 export class CpuShip extends MovingShip {
   callSign: string;
+  shield = 40;
+  shieldMax = 40;
   private nextDecision = 0;
+  private beamCd = 0;
+
   constructor(id: number, x: number, y: number, callSign: string, private rng: () => number) {
     super(id, "cpu", x, y, CPU_SPEC);
     this.callSign = callSign;
     this.impulse = 0.5;
   }
-  override update(dt: number, _world?: World): void {
-    this.nextDecision -= dt;
-    if (this.nextDecision <= 0) {
-      this.targetHeading = this.rng() * 360;
-      this.nextDecision = 8 + this.rng() * 8;
+
+  override update(dt: number, world: World): void {
+    const player = world.ship;
+    const d = player && !player.dead ? dist(this, player) : Infinity;
+    if (d < 4500) {
+      // Modo ataque: perseguir y disparar
+      this.targetHeading = bearing(this, player);
+      this.impulse = d > 900 ? 0.8 : 0.3;
+      this.beamCd = Math.max(0, this.beamCd - dt);
+      if (d <= CPU_BEAM.range && this.beamCd <= 0) {
+        this.beamCd = CPU_BEAM.cycle;
+        world.events.push({ k: "beam", fx: this.x, fy: this.y, tx: player.x, ty: player.y, hostile: true });
+        player.takeDamage(CPU_BEAM.dmg, bearing(player, this), world);
+      }
+    } else {
+      this.nextDecision -= dt;
+      if (this.nextDecision <= 0) {
+        this.targetHeading = this.rng() * 360;
+        this.nextDecision = 8 + this.rng() * 8;
+        this.impulse = 0.5;
+      }
     }
     super.update(dt);
   }
+
+  takeDamage(dmg: number, _fromBearing: number, world: World): boolean {
+    const absorbed = Math.min(this.shield, dmg);
+    this.shield -= absorbed;
+    dmg -= absorbed;
+    if (dmg > 0) this.hull = Math.max(0, this.hull - dmg);
+    if (this.hull <= 0 && !this.dead) {
+      this.dead = true;
+      world.events.push({ k: "boom", x: this.x, y: this.y, big: true });
+    }
+    return this.dead;
+  }
+
   override state(): EntityState {
-    return { ...super.state(), callSign: this.callSign, faction: "hostile" };
+    return {
+      ...super.state(),
+      callSign: this.callSign,
+      faction: "hostile",
+      hullFrac: this.hull / this.spec.hullMax,
+      shieldFrac: this.shield / this.shieldMax,
+    };
+  }
+}
+
+export class Missile extends Entity {
+  private life = MISSILE.life;
+  constructor(id: number, x: number, y: number, heading: number, private targetId: number, private firedBy: number) {
+    super(id, "missile", x, y, heading);
+  }
+
+  update(dt: number, world: World): void {
+    this.life -= dt;
+    if (this.life <= 0) {
+      this.dead = true;
+      return;
+    }
+    const target = world.get(this.targetId);
+    if (target) {
+      const want = bearing(this, target);
+      const diff = angleDiff(this.heading, want);
+      const maxTurn = MISSILE.turnRate * dt;
+      this.heading = norm(this.heading + Math.max(-maxTurn, Math.min(maxTurn, diff)));
+    }
+    this.x += Math.sin(this.heading * DEG) * MISSILE.speed * dt;
+    this.y += Math.cos(this.heading * DEG) * MISSILE.speed * dt;
+    if (target && dist(this, target) <= MISSILE.proximity) {
+      this.dead = true;
+      world.events.push({ k: "boom", x: this.x, y: this.y, big: false });
+      if (target instanceof CpuShip || target instanceof PlayerShip) {
+        target.takeDamage(MISSILE.dmg, bearing(target, this), world);
+      }
+    }
   }
 }
 
@@ -137,6 +321,7 @@ export class World {
   time = 0;
   ship: PlayerShip;
   rng: () => number;
+  events: SimEvent[] = [];
 
   constructor(seed = 42) {
     this.rng = makeRng(seed);
@@ -146,6 +331,10 @@ export class World {
 
   allocId(): number {
     return this.nextId++;
+  }
+
+  get(id: number): Entity | undefined {
+    return this.entities.get(id);
   }
 
   addAsteroid(x: number, y: number): Asteroid {
@@ -160,17 +349,40 @@ export class World {
     return s;
   }
 
+  spawnMissile(from: PlayerShip, targetId: number): Missile {
+    const m = new Missile(this.allocId(), from.x, from.y, from.heading, targetId, from.id);
+    this.entities.set(m.id, m);
+    this.events.push({ k: "launch", x: from.x, y: from.y });
+    return m;
+  }
+
+  get hostilesAlive(): number {
+    let n = 0;
+    for (const e of this.entities.values()) if (e instanceof CpuShip && !e.dead) n++;
+    return n;
+  }
+
+  get playerDead(): boolean {
+    return this.ship.dead;
+  }
+
   tick(dt = 1 / this.tickRate): void {
     this.time += dt;
     for (const e of this.entities.values()) e.update(dt, this);
+    for (const [id, e] of this.entities) {
+      if (e.dead && e !== this.ship) this.entities.delete(id);
+    }
   }
 
   snapshot(): WorldSnapshot {
-    return {
+    const snap = {
       time: this.time,
       ship: this.ship.playerState(),
-      entities: [...this.entities.values()].map((e) => e.state()),
+      entities: [...this.entities.values()].filter((e) => !e.dead).map((e) => e.state()),
+      events: this.events,
     };
+    this.events = [];
+    return snap;
   }
 }
 
@@ -179,8 +391,8 @@ export function createTestScenario(seed = 42): World {
   const w = new World(seed);
   for (let i = 0; i < 24; i++) {
     const ang = w.rng() * Math.PI * 2;
-    const dist = 2500 + w.rng() * 4000;
-    w.addAsteroid(Math.sin(ang) * dist, Math.cos(ang) * dist);
+    const d = 2500 + w.rng() * 4000;
+    w.addAsteroid(Math.sin(ang) * d, Math.cos(ang) * d);
   }
   w.addCpuShip(4000, 3000, "KR-7");
   w.addCpuShip(-3500, 4500, "KR-12");

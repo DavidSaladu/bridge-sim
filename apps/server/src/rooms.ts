@@ -57,6 +57,19 @@ export class Room {
       const snap = this.world.snapshot();
       this.broadcast({ t: "snap", snap });
     }
+    // Fin de partida
+    if (this.world.playerDead) {
+      this.endGame(false, "La nave ha sido destruida. Fin de la misión.");
+    } else if (this.world.hostilesAlive === 0) {
+      this.endGame(true, "Todos los hostiles destruidos. ¡Victoria!");
+    }
+  }
+
+  private endGame(victory: boolean, message: string): void {
+    this.broadcast({ t: "gameOver", victory, message });
+    this.stop();
+    this.phase = "lobby";
+    this.broadcastRoom();
   }
 
   stop(): void {
@@ -167,6 +180,29 @@ export class Room {
         if (!ship) return;
         if (msg.cmd === "setImpulse" && typeof msg.value === "number") ship.setImpulse(msg.value);
         if (msg.cmd === "setHeading" && typeof msg.value === "number") ship.setTargetHeading(msg.value);
+        break;
+      }
+      case "weapons": {
+        if (!player.stations.includes("weapons")) {
+          player.outbox?.send({ t: "error", code: "wrong_station", message: "No estás en Armamento" });
+          return;
+        }
+        const ship = this.world?.ship;
+        if (!ship || !this.world) return;
+        switch (msg.cmd) {
+          case "setTarget":
+            ship.setTarget(typeof msg.id === "number" ? msg.id : null);
+            break;
+          case "loadTube":
+            if (typeof msg.tube === "number") ship.loadTube(msg.tube);
+            break;
+          case "fireTube":
+            if (typeof msg.tube === "number") ship.fireTube(msg.tube, this.world);
+            break;
+          case "shields":
+            ship.setShields(Boolean(msg.up));
+            break;
+        }
         break;
       }
     }

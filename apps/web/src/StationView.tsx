@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Viewport3D } from "./Viewport3D.js";
+import type { TimedEvent } from "./Radar.js";
 import type { GameSnap, Station } from "@bridge/shared";
 import { STATION_LABELS } from "@bridge/shared";
 import { Radar } from "./Radar.js";
@@ -8,21 +9,117 @@ interface Props {
   station: Station | null;
   snap: GameSnap | null;
   send: (msg: object) => void;
+  events: TimedEvent[];
 }
 
-export function StationView({ station, snap, send }: Props) {
+export function StationView({ station, snap, send, events }: Props) {
   if (!snap) return <p className="muted">Esperando datos de la nave…</p>;
   switch (station) {
     case "helm":
-      return <HelmView snap={snap} send={send} />;
+      return <HelmView snap={snap} send={send} events={events} />;
+    case "weapons":
+      return <WeaponsView snap={snap} send={send} events={events} />;
     case "captain":
-      return <CaptainView snap={snap} />;
+      return <CaptainView snap={snap} events={events} />;
     default:
-      return <GenericView station={station} snap={snap} />;
+      return <GenericView station={station} snap={snap} events={events} />;
   }
 }
 
-function HelmView({ snap, send }: { snap: GameSnap; send: (m: object) => void }) {
+function WeaponsView({ snap, send, events }: { snap: GameSnap; send: (m: object) => void; events: TimedEvent[] }) {
+  const { ship } = snap;
+  const target = snap.entities.find((e) => e.id === ship.targetId);
+  return (
+    <div className="row" style={{ alignItems: "flex-start", gap: "1.5rem" }}>
+      <Radar
+        snap={snap}
+        range={5000}
+        size={420}
+        targetId={ship.targetId}
+        events={events}
+        onSelectEntity={(id) => send({ t: "weapons", cmd: "setTarget", id })}
+      />
+      <div style={{ minWidth: 280, flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        <Viewport3D snap={snap} height={170} />
+        <div className="panel">
+          <h3 style={{ marginTop: 0, color: "var(--accent)" }}>Armamento</h3>
+          <p className="muted" style={{ marginTop: 0 }}>Pulsa sobre una nave en el radar para fijar blanco</p>
+
+          <div style={{ marginBottom: "0.75rem" }}>
+            <b style={{ color: "#facc15" }}>Blanco:</b>{" "}
+            {target ? (
+              <>
+                {target.callSign}
+                <Bar label="Casco" frac={target.hullFrac ?? 1} color="#f87171" />
+                <Bar label="Escudo" frac={target.shieldFrac ?? 0} color="#38bdf8" />
+              </>
+            ) : (
+              <span className="muted">ninguno</span>
+            )}
+          </div>
+
+          <div style={{ marginBottom: "0.75rem" }}>
+            <b>Rayos:</b>{" "}
+            {ship.beamCooldown <= 0 ? (
+              <span style={{ color: "#4ade80" }}>listos (auto al blanco en arco)</span>
+            ) : (
+              <span className="muted">recargando {Math.round(ship.beamCooldown * 100)}%</span>
+            )}
+          </div>
+
+          <div style={{ marginBottom: "0.75rem" }}>
+            <b>Tubos de misiles</b>
+            {ship.tubes.map((tube, i) => (
+              <div key={i} className="row" style={{ marginTop: "0.35rem", fontSize: "0.9rem" }}>
+                <span className="muted">Tubo {i + 1}:</span>
+                {tube.state === "empty" && (
+                  <button style={{ padding: "0.2rem 0.6rem" }} onClick={() => send({ t: "weapons", cmd: "loadTube", tube: i })}>
+                    Cargar
+                  </button>
+                )}
+                {tube.state === "loading" && <span className="muted">cargando {Math.round(tube.progress * 100)}%</span>}
+                {tube.state === "loaded" && (
+                  <button
+                    style={{ padding: "0.2rem 0.6rem", borderColor: "#f87171", background: "#7f1d1d" }}
+                    onClick={() => send({ t: "weapons", cmd: "fireTube", tube: i })}
+                    disabled={!target}
+                  >
+                    ¡Disparar!
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div>
+            <b>Escudos:</b>{" "}
+            <button
+              style={{ padding: "0.2rem 0.6rem" }}
+              onClick={() => send({ t: "weapons", cmd: "shields", up: !ship.shieldsUp })}
+            >
+              {ship.shieldsUp ? "Bajar" : "Subir"}
+            </button>
+            <Bar label={`Proa ${ship.shieldFront}`} frac={ship.shieldFront / ship.shieldMax} color="#38bdf8" />
+            <Bar label={`Popa ${ship.shieldRear}`} frac={ship.shieldRear / ship.shieldMax} color="#38bdf8" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Bar({ label, frac, color }: { label: string; frac: number; color: string }) {
+  return (
+    <div style={{ margin: "0.25rem 0" }}>
+      <div className="muted" style={{ fontSize: "0.75rem" }}>{label}</div>
+      <div style={{ background: "#1e293b", borderRadius: 3, height: 8 }}>
+        <div style={{ width: `${Math.max(0, Math.min(100, frac * 100))}%`, background: color, height: 8, borderRadius: 3 }} />
+      </div>
+    </div>
+  );
+}
+
+function HelmView({ snap, send, events }: { snap: GameSnap; send: (m: object) => void; events: TimedEvent[] }) {
   const [impulse, setImpulse] = useState(0);
   const { ship } = snap;
 
@@ -37,6 +134,7 @@ function HelmView({ snap, send }: { snap: GameSnap; send: (m: object) => void })
         snap={snap}
         range={5000}
         size={420}
+        events={events}
         onSetHeading={(deg) => send({ t: "helm", cmd: "setHeading", value: deg })}
       />
       <div style={{ minWidth: 260, flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
@@ -76,7 +174,7 @@ function HelmView({ snap, send }: { snap: GameSnap; send: (m: object) => void })
   );
 }
 
-function CaptainView({ snap }: { snap: GameSnap }) {
+function CaptainView({ snap, events }: { snap: GameSnap; events: TimedEvent[] }) {
   const [view, setView] = useState<"3d" | "tactical">("3d");
   const { ship } = snap;
   return (
@@ -99,7 +197,7 @@ function CaptainView({ snap }: { snap: GameSnap }) {
         <Viewport3D snap={snap} height={460} collapsible={false} />
       ) : (
         <div className="row" style={{ justifyContent: "center" }}>
-          <Radar snap={snap} range={12000} size={560} />
+          <Radar snap={snap} range={12000} size={560} events={events} />
         </div>
       )}
       <div className="row" style={{ justifyContent: "center", gap: "2rem", marginTop: "0.5rem" }}>
@@ -111,10 +209,10 @@ function CaptainView({ snap }: { snap: GameSnap }) {
   );
 }
 
-function GenericView({ station, snap }: { station: Station | null; snap: GameSnap }) {
+function GenericView({ station, snap, events }: { station: Station | null; snap: GameSnap; events: TimedEvent[] }) {
   return (
     <div className="row" style={{ alignItems: "flex-start", gap: "1.5rem" }}>
-      <Radar snap={snap} range={8000} size={320} />
+      <Radar snap={snap} range={8000} size={320} events={events} />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
       <Viewport3D snap={snap} height={170} />
       <div className="panel">

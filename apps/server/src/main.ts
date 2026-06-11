@@ -8,14 +8,17 @@ import type { ClientMsg } from "@bridge/shared";
 import { AccessToken } from "livekit-server-sdk";
 import { RoomManager, type Outbox } from "./rooms.js";
 
-// Carga .env simple (producción en Hostinger no tiene gestor de secretos)
-try {
-  const envFile = fs.readFileSync(path.resolve(process.cwd(), ".env"), "utf8");
-  for (const line of envFile.split("\n")) {
-    const m = line.match(/^([A-Z_]+)=(.*)$/);
-    if (m && m[1] && process.env[m[1]] === undefined) process.env[m[1]] = m[2];
-  }
-} catch { /* sin .env */ }
+// Carga .env simple, buscando en cwd y hasta 3 niveles hacia arriba (dev local / producción)
+for (let dir = process.cwd(), i = 0; i < 4; i++, dir = path.dirname(dir)) {
+  try {
+    const envFile = fs.readFileSync(path.join(dir, ".env"), "utf8");
+    for (const line of envFile.split("\n")) {
+      const m = line.match(/^([A-Z_]+)=(.*)$/);
+      if (m && m[1] && process.env[m[1]] === undefined) process.env[m[1]] = m[2];
+    }
+    break;
+  } catch { /* seguir buscando */ }
+}
 
 const PORT = Number(process.env.PORT ?? 3001);
 const PUBLIC_DIR = path.resolve(process.cwd(), "public");
