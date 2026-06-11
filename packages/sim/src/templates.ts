@@ -26,6 +26,8 @@ export interface ShipTemplate {
   beam?: BeamSpec;
   tubes?: number;
   hasWarp?: boolean;
+  hasJump?: boolean;
+  ammo?: { homing: number; nuke: number; emp: number };
 }
 
 export const TEMPLATES = {
@@ -42,6 +44,8 @@ export const TEMPLATES = {
     beam: { range: 1500, arc: 100, cycle: 6, dmg: 9 },
     tubes: 2,
     hasWarp: true,
+    hasJump: true,
+    ammo: { homing: 12, nuke: 4, emp: 6 },
   },
   // ——— IA ———
   "Phobos T3": {

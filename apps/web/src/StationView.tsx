@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Viewport3D } from "./Viewport3D.js";
 import type { TimedEvent } from "./Radar.js";
-import type { GameSnap, ShipSystem, Station } from "@bridge/shared";
-import { SHIP_SYSTEMS, STATION_LABELS, SYSTEM_LABELS } from "@bridge/shared";
+import type { GameSnap, MissileType, ShipSystem, Station } from "@bridge/shared";
+import { MISSILE_LABELS, MISSILE_TYPES, SHIP_SYSTEMS, STATION_LABELS, SYSTEM_LABELS } from "@bridge/shared";
 import { Radar } from "./Radar.js";
 
 export interface CommsChannel {
@@ -86,22 +86,34 @@ function WeaponsView({ snap, send, events }: { snap: GameSnap; send: (m: object)
 
           <div style={{ marginBottom: "0.75rem" }}>
             <b>Tubos de misiles</b>
+            <p className="muted" style={{ margin: "0.25rem 0", fontSize: "0.8rem" }}>
+              Reservas: {MISSILE_TYPES.map((m) => `${MISSILE_LABELS[m]} ${ship.ammo[m]}`).join(" · ")}
+            </p>
             {ship.tubes.map((tube, i) => (
               <div key={i} className="row" style={{ marginTop: "0.35rem", fontSize: "0.9rem" }}>
                 <span className="muted">Tubo {i + 1}:</span>
-                {tube.state === "empty" && (
-                  <button style={{ padding: "0.2rem 0.6rem" }} onClick={() => send({ t: "weapons", cmd: "loadTube", tube: i })}>
-                    Cargar
-                  </button>
+                {tube.state === "empty" &&
+                  MISSILE_TYPES.map((m) => (
+                    <button
+                      key={m}
+                      style={{ padding: "0.15rem 0.5rem", fontSize: "0.8rem" }}
+                      disabled={ship.ammo[m] <= 0}
+                      onClick={() => send({ t: "weapons", cmd: "loadTube", tube: i, missile: m })}
+                      title={`Cargar ${MISSILE_LABELS[m]}`}
+                    >
+                      {MISSILE_LABELS[m]}
+                    </button>
+                  ))}
+                {tube.state === "loading" && (
+                  <span className="muted">cargando {tube.missile && MISSILE_LABELS[tube.missile]} {Math.round(tube.progress * 100)}%</span>
                 )}
-                {tube.state === "loading" && <span className="muted">cargando {Math.round(tube.progress * 100)}%</span>}
                 {tube.state === "loaded" && (
                   <button
                     style={{ padding: "0.2rem 0.6rem", borderColor: "#f87171", background: "#7f1d1d" }}
                     onClick={() => send({ t: "weapons", cmd: "fireTube", tube: i })}
                     disabled={!target}
                   >
-                    ¡Disparar!
+                    ¡Disparar {tube.missile && MISSILE_LABELS[tube.missile]}!
                   </button>
                 )}
               </div>
@@ -460,6 +472,7 @@ function HelmView({ snap, send, events }: { snap: GameSnap; send: (m: object) =>
               )}
             </div>
           )}
+          {ship.hasJump && <JumpPanel snap={snap} send={send} />}
           <div style={{ marginTop: "0.75rem" }}>
             {ship.docked ? (
               <button
@@ -541,6 +554,52 @@ function GenericView({ station, snap, events }: { station: Station | null; snap:
         </p>
       </div>
       </div>
+    </div>
+  );
+}
+
+
+function JumpPanel({ snap, send }: { snap: GameSnap; send: (m: object) => void }) {
+  const [distKm, setDistKm] = useState(10);
+  const { ship } = snap;
+  const j = ship.jump;
+  const charging = j && j.charge < 1 && j.cooldown <= 0;
+  const ready = j && j.charge >= 1;
+  const cooling = j && j.cooldown > 0 && j.charge === 0;
+
+  return (
+    <div style={{ marginTop: "0.75rem" }}>
+      <label className="muted">Salto (jump drive)</label>
+      {!j && (
+        <div className="row" style={{ marginTop: "0.25rem" }}>
+          <input
+            type="range" min={5} max={50} value={distKm}
+            onChange={(e) => setDistKm(Number(e.target.value))}
+            style={{ flex: 1 }}
+          />
+          <span style={{ minWidth: 50 }}>{distKm} km</span>
+          <button onClick={() => send({ t: "helm", cmd: "chargeJump", distance: distKm * 1000 })}>
+            Cargar salto
+          </button>
+        </div>
+      )}
+      {charging && (
+        <div className="row" style={{ marginTop: "0.25rem" }}>
+          <span style={{ color: "#a78bfa" }}>Cargando {Math.round(j.charge * 100)}% ({Math.round(j.distance / 1000)} km)</span>
+          <button onClick={() => send({ t: "helm", cmd: "abortJump" })} style={{ fontSize: "0.8rem", padding: "0.15rem 0.5rem" }}>
+            Abortar
+          </button>
+        </div>
+      )}
+      {ready && (
+        <button
+          style={{ marginTop: "0.25rem", background: "#7c3aed", borderColor: "#a78bfa", fontSize: "1rem" }}
+          onClick={() => send({ t: "helm", cmd: "executeJump" })}
+        >
+          ⚡ SALTAR {Math.round(j.distance / 1000)} km (rumbo {Math.round(ship.heading)}°)
+        </button>
+      )}
+      {cooling && <span className="muted">Recalibrando salto… {Math.round(j.cooldown)} s</span>}
     </div>
   );
 }

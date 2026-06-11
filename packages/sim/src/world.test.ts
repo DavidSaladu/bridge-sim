@@ -288,3 +288,76 @@ describe("Plantillas, facciones y warp", () => {
     expect(w.ship.warp).toBe(0);
   });
 });
+
+describe("Jump drive", () => {
+  it("carga en ~10 s, salta por el rumbo y entra en cooldown", () => {
+    const w = new World(11);
+    w.ship.heading = 90; // este
+    w.ship.setTargetHeading(90);
+    expect(w.ship.chargeJump(10000)).toBe(true);
+    for (let i = 0; i < 20 * 5; i++) w.tick();
+    expect(w.ship.executeJump(w)).toBe(false); // aún cargando
+    for (let i = 0; i < 20 * 6; i++) w.tick();
+    const e0 = w.ship.engineering.energy;
+    expect(w.ship.executeJump(w)).toBe(true);
+    expect(w.ship.x).toBeGreaterThan(9000); // ~10 km al este (±2%)
+    expect(w.ship.engineering.energy).toBeLessThan(e0);
+    expect(w.ship.chargeJump(10000)).toBe(false); // cooldown activo
+  });
+});
+
+describe("Tipos de misil", () => {
+  function armedWorld() {
+    const w = new World(11);
+    const target = w.addCpuShip(0, 2500, "KR-X");
+    target.impulse = 0; target.heading = 180; target.targetHeading = 180;
+    w.ship.setTarget(target.id);
+    return { w, target };
+  }
+
+  function loadAndFire(w: World, type: "homing" | "nuke" | "emp") {
+    w.ship.loadTube(0, type);
+    for (let i = 0; i < 20 * 16; i++) {
+      w.tick();
+      if (w.ship.tubes[0]!.state === "loaded") break;
+    }
+    w.ship.fireTube(0, w);
+    for (let i = 0; i < 20 * 30; i++) {
+      w.tick();
+      if (![...w.allEntities()].some((e) => e.kind === "missile")) break;
+    }
+  }
+
+  it("la munición se consume al cargar y se repone atracado", () => {
+    const w = new World(11);
+    expect(w.ship.ammo.nuke).toBe(4);
+    w.ship.loadTube(0, "nuke");
+    expect(w.ship.ammo.nuke).toBe(3);
+    w.addStation(0, 300, "DS");
+    w.ship.speed = 0;
+    w.ship.requestDock(w);
+    for (let i = 0; i < 20 * 10; i++) w.tick();
+    expect(w.ship.ammo.nuke).toBe(4);
+  });
+
+  it("sin stock no se puede cargar", () => {
+    const w = new World(11);
+    w.ship.ammo.emp = 0;
+    w.ship.loadTube(0, "emp");
+    expect(w.ship.tubes[0]!.state).toBe("empty");
+  });
+
+  it("la nuke hace daño masivo de área", () => {
+    const { w, target } = armedWorld();
+    loadAndFire(w, "nuke");
+    expect(target.dead).toBe(true); // 160 de área vs 50+70
+  });
+
+  it("el EMP funde escudos pero respeta el casco", () => {
+    const { w, target } = armedWorld();
+    loadAndFire(w, "emp");
+    expect(target.shield).toBe(0);
+    expect(target.hull).toBe(70);
+    expect(target.dead).toBe(false);
+  });
+});

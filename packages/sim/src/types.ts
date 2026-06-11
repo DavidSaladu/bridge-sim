@@ -17,9 +17,12 @@ export interface EntityState {
 
 export type TubeStateSim = "empty" | "loading" | "loaded";
 
+export type MissileTypeSim = "homing" | "nuke" | "emp";
+
 export interface TubeSim {
   state: TubeStateSim;
   t: number;
+  missile: MissileTypeSim | null;
 }
 
 import type { SystemName, SystemState } from "./systems.js";
@@ -38,7 +41,7 @@ export interface PlayerShipState {
   shieldRear: number;
   shieldMax: number;
   targetId: number | null;
-  tubes: { state: TubeStateSim; progress: number }[];
+  tubes: { state: TubeStateSim; progress: number; missile: MissileTypeSim | null }[];
   beamCooldown: number;
   energy: number;
   energyMax: number;
@@ -49,6 +52,9 @@ export interface PlayerShipState {
   canDock: boolean;
   warp: number;
   hasWarp: boolean;
+  hasJump: boolean;
+  jump: { charge: number; cooldown: number; distance: number } | null;
+  ammo: Record<MissileTypeSim, number>;
 }
 
 export type SimEvent =

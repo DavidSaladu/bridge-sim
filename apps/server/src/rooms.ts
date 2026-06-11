@@ -236,6 +236,13 @@ export class Room {
         }
         if (msg.cmd === "undock") ship.undock();
         if (msg.cmd === "setWarp" && typeof msg.value === "number") ship.setWarp(msg.value);
+        if (msg.cmd === "chargeJump" && typeof msg.distance === "number" && this.world) {
+          if (!ship.chargeJump(msg.distance)) {
+            player.outbox?.send({ t: "error", code: "jump_failed", message: "Salto no disponible (cooldown, atraque o carga en curso)" });
+          }
+        }
+        if (msg.cmd === "executeJump" && this.world) ship.executeJump(this.world);
+        if (msg.cmd === "abortJump") ship.abortJump();
         break;
       }
       case "engineering": {
@@ -326,7 +333,7 @@ export class Room {
             ship.setTarget(typeof msg.id === "number" ? msg.id : null);
             break;
           case "loadTube":
-            if (typeof msg.tube === "number") ship.loadTube(msg.tube);
+            if (typeof msg.tube === "number") ship.loadTube(msg.tube, msg.missile ?? "homing");
             break;
           case "fireTube":
             if (typeof msg.tube === "number") ship.fireTube(msg.tube, this.world);

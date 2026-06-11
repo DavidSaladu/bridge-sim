@@ -1,4 +1,4 @@
-export const SYSTEMS = ["reactor", "beams", "missiles", "maneuver", "impulse", "warp", "shields"] as const;
+export const SYSTEMS = ["reactor", "beams", "missiles", "maneuver", "impulse", "warp", "jump", "shields"] as const;
 export type SystemName = (typeof SYSTEMS)[number];
 
 export interface SystemState {

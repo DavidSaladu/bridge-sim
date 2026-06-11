@@ -38,6 +38,24 @@ function specFrom(t: ShipTemplate): ShipSpec {
 const TUBE_LOAD_TIME = 8;
 const WARP_SPEED_PER_LEVEL = 600;
 const WARP_ENERGY_PER_LEVEL = 6; // energía/s por nivel
+const JUMP_CHARGE_TIME = 10;     // s a eficacia 1
+const JUMP_COOLDOWN = 30;
+const JUMP_ENERGY_PER_KM = 3;
+const JUMP_MIN = 5000;
+const JUMP_MAX = 50000;
+
+interface MissileSpec {
+  dmg: number;
+  blast: number;        // radio de explosión (0 = impacto directo)
+  shieldsOnly?: boolean;
+  loadTime: number;
+}
+
+const MISSILE_SPECS: Record<"homing" | "nuke" | "emp", MissileSpec> = {
+  homing: { dmg: 35, blast: 0, loadTime: 8 },
+  nuke: { dmg: 160, blast: 1000, loadTime: 15 },
+  emp: { dmg: 130, blast: 1000, shieldsOnly: true, loadTime: 12 },
+};
 const SCAN_TIME = 6;
 const SCAN_RANGE = 12000;
 const DOCK_RANGE = 1000;
@@ -151,6 +169,9 @@ abstract class MovingShip extends Entity {
 
   /** Aplica daño. Devuelve true si la nave queda destruida. */
   abstract takeDamage(dmg: number, fromBearing: number, world: World): boolean;
+
+  /** Drena solo escudos (armas EMP). */
+  abstract drainShields(amount: number): void;
 }
 
 export class PlayerShip extends MovingShip {
@@ -166,6 +187,12 @@ export class PlayerShip extends MovingShip {
   scanTargetId: number | null = null;
   scanProgress = 0;
   warp = 0;
+  ammo: { homing: number; nuke: number; emp: number };
+  jumpCharge = 0;        // 0..1 cuando se está cargando
+  jumpCharging = false;
+  jumpDistance = 10000;
+  jumpCooldown = 0;
+  private restockTimer = 0;
   tubes: TubeSim[];
   beamCd = 0;
 
@@ -177,7 +204,39 @@ export class PlayerShip extends MovingShip {
     this.shieldMax = Math.max(tpl.shieldFront ?? 100, tpl.shieldRear ?? 100);
     this.shieldFront = tpl.shieldFront ?? 100;
     this.shieldRear = tpl.shieldRear ?? 100;
-    this.tubes = Array.from({ length: tpl.tubes ?? 0 }, () => ({ state: "empty" as const, t: 0 }));
+    this.tubes = Array.from({ length: tpl.tubes ?? 0 }, () => ({ state: "empty" as const, t: 0, missile: null }));
+    this.ammo = { ...(tpl.ammo ?? { homing: 8, nuke: 0, emp: 0 }) };
+  }
+
+  chargeJump(distance: number): boolean {
+    if (!this.template.hasJump || this.dockedTo != null || this.jumpCooldown > 0 || this.jumpCharging) return false;
+    this.jumpDistance = Math.max(JUMP_MIN, Math.min(JUMP_MAX, distance));
+    this.jumpCharging = true;
+    this.jumpCharge = 0;
+    return true;
+  }
+
+  abortJump(): void {
+    this.jumpCharging = false;
+    this.jumpCharge = 0;
+  }
+
+  executeJump(world: World): boolean {
+    if (!this.jumpCharging || this.jumpCharge < 1) return false;
+    const km = this.jumpDistance / 1000;
+    if (!this.engineering.drain(km * JUMP_ENERGY_PER_KM)) return false;
+    world.events.push({ k: "boom", x: this.x, y: this.y, big: false });
+    // Salto por el rumbo actual, con dispersión del 2%
+    const scatter = (world.rng() - 0.5) * 0.04 * this.jumpDistance;
+    const d = this.jumpDistance + scatter;
+    this.x += Math.sin(this.heading * DEG) * d;
+    this.y += Math.cos(this.heading * DEG) * d;
+    this.speed = 0;
+    this.jumpCharging = false;
+    this.jumpCharge = 0;
+    this.jumpCooldown = JUMP_COOLDOWN;
+    world.events.push({ k: "boom", x: this.x, y: this.y, big: false });
+    return true;
   }
 
   setWarp(level: number): void {
@@ -233,21 +292,25 @@ export class PlayerShip extends MovingShip {
     this.scanTargetId = null;
     this.scanProgress = 0;
   }
-  loadTube(i: number): void {
+  loadTube(i: number, missile: "homing" | "nuke" | "emp" = "homing"): void {
     const tube = this.tubes[i];
-    if (tube && tube.state === "empty") {
+    if (tube && tube.state === "empty" && this.ammo[missile] > 0) {
+      this.ammo[missile]--;
       tube.state = "loading";
       tube.t = 0;
+      tube.missile = missile;
     }
   }
   fireTube(i: number, world: World): void {
     const tube = this.tubes[i];
-    if (!tube || tube.state !== "loaded" || this.targetId == null) return;
+    if (!tube || tube.state !== "loaded" || this.targetId == null || !tube.missile) return;
     const target = world.get(this.targetId);
     if (!target) return;
+    const missile = tube.missile;
     tube.state = "empty";
     tube.t = 0;
-    world.spawnMissile(this, target.id);
+    tube.missile = null;
+    world.spawnMissile(this, target.id, missile);
   }
 
   override update(dt: number, world: World): void {
@@ -258,6 +321,15 @@ export class PlayerShip extends MovingShip {
       this.speed = 0;
       this.hull = Math.min(this.spec.hullMax, this.hull + 3 * dt);
       this.engineering.energy = Math.min(1000, this.engineering.energy + 25 * dt);
+      // Reabastecimiento de munición (1 unidad cada 3 s por tipo)
+      const maxAmmo = this.template.ammo ?? { homing: 8, nuke: 0, emp: 0 };
+      this.restockTimer = this.restockTimer + dt;
+      if (this.restockTimer >= 3) {
+        this.restockTimer = 0;
+        for (const k of ["homing", "nuke", "emp"] as const) {
+          if (this.ammo[k] < maxAmmo[k]) this.ammo[k]++;
+        }
+      }
       for (const name of Object.keys(this.engineering.systems) as (keyof typeof this.engineering.systems)[]) {
         const sys = this.engineering.systems[name];
         sys.health = Math.min(1, sys.health + 0.015 * dt);
@@ -298,13 +370,20 @@ export class PlayerShip extends MovingShip {
     // Tubos
     const effMissiles = Math.max(0.1, Math.min(2, this.engineering.effectiveness("missiles")));
     for (const tube of this.tubes) {
-      if (tube.state === "loading") {
+      if (tube.state === "loading" && tube.missile) {
+        const loadTime = MISSILE_SPECS[tube.missile].loadTime;
         tube.t += dt * effMissiles;
-        if (tube.t >= TUBE_LOAD_TIME) {
+        if (tube.t >= loadTime) {
           tube.state = "loaded";
-          tube.t = TUBE_LOAD_TIME;
+          tube.t = loadTime;
         }
       }
+    }
+    // Salto: carga y cooldown
+    this.jumpCooldown = Math.max(0, this.jumpCooldown - dt);
+    if (this.jumpCharging && this.jumpCharge < 1) {
+      const effJump = Math.max(0.1, Math.min(2, this.engineering.effectiveness("jump")));
+      this.jumpCharge = Math.min(1, this.jumpCharge + (dt / JUMP_CHARGE_TIME) * effJump);
     }
     // Rayos automáticos contra el blanco seleccionado
     const effBeams = Math.max(0.1, Math.min(2, this.engineering.effectiveness("beams")));
@@ -335,6 +414,12 @@ export class PlayerShip extends MovingShip {
         }
       }
     }
+  }
+
+  drainShields(amount: number): void {
+    const half = amount / 2;
+    this.shieldFront = Math.max(0, this.shieldFront - half);
+    this.shieldRear = Math.max(0, this.shieldRear - half);
   }
 
   takeDamage(dmg: number, fromBearing: number, world: World): boolean {
@@ -370,7 +455,11 @@ export class PlayerShip extends MovingShip {
       targetId: this.targetId,
       tubes: this.tubes.map((t) => ({
         state: t.state,
-        progress: t.state === "loading" ? t.t / TUBE_LOAD_TIME : t.state === "loaded" ? 1 : 0,
+        missile: t.missile,
+        progress:
+          t.state === "loading" && t.missile
+            ? t.t / MISSILE_SPECS[t.missile].loadTime
+            : t.state === "loaded" ? 1 : 0,
       })),
       beamCooldown: this.template.beam ? this.beamCd / this.template.beam.cycle : 0,
       ...this.engineering.snapshot(),
@@ -381,6 +470,11 @@ export class PlayerShip extends MovingShip {
       canDock: this.dockedTo == null && this.speed <= DOCK_MAX_SPEED && this.nearestDockable(world) != null,
       warp: this.warp,
       hasWarp: Boolean(this.template.hasWarp),
+      hasJump: Boolean(this.template.hasJump),
+      jump: this.jumpCharging || this.jumpCooldown > 0
+        ? { charge: this.jumpCharge, cooldown: this.jumpCooldown, distance: this.jumpDistance }
+        : null,
+      ammo: { ...this.ammo },
     };
   }
 
@@ -461,6 +555,10 @@ export class CpuShip extends MovingShip {
     super.update(dt);
   }
 
+  drainShields(amount: number): void {
+    this.shield = Math.max(0, this.shield - amount);
+  }
+
   takeDamage(dmg: number, _fromBearing: number, world: World): boolean {
     const absorbed = Math.min(this.shield, dmg);
     this.shield -= absorbed;
@@ -492,8 +590,37 @@ export class CpuShip extends MovingShip {
 
 export class Missile extends Entity {
   private life = MISSILE.life;
-  constructor(id: number, x: number, y: number, heading: number, private targetId: number, private firedBy: number) {
+  constructor(
+    id: number, x: number, y: number, heading: number,
+    private targetId: number, private firedBy: number,
+    public missileType: "homing" | "nuke" | "emp" = "homing",
+  ) {
     super(id, "missile", x, y, heading);
+  }
+
+  private explode(world: World): void {
+    const spec = MISSILE_SPECS[this.missileType];
+    this.dead = true;
+    world.events.push({ k: "boom", x: this.x, y: this.y, big: spec.blast > 0 });
+    if (spec.blast > 0) {
+      // Daño en área con atenuación
+      for (const t of world.allEntities()) {
+        if (!(t instanceof CpuShip || t instanceof PlayerShip) || t.dead) continue;
+        const d = dist(this, t);
+        if (d > spec.blast) continue;
+        const dmg = spec.dmg * Math.max(0.25, 1 - d / spec.blast);
+        if (spec.shieldsOnly) {
+          t.drainShields(dmg);
+        } else {
+          t.takeDamage(dmg, bearing(t, this), world);
+        }
+      }
+    } else {
+      const target = world.get(this.targetId);
+      if (target instanceof CpuShip || target instanceof PlayerShip) {
+        target.takeDamage(spec.dmg, bearing(target, this), world);
+      }
+    }
   }
 
   update(dt: number, world: World): void {
@@ -511,13 +638,7 @@ export class Missile extends Entity {
     }
     this.x += Math.sin(this.heading * DEG) * MISSILE.speed * dt;
     this.y += Math.cos(this.heading * DEG) * MISSILE.speed * dt;
-    if (target && dist(this, target) <= MISSILE.proximity) {
-      this.dead = true;
-      world.events.push({ k: "boom", x: this.x, y: this.y, big: false });
-      if (target instanceof CpuShip || target instanceof PlayerShip) {
-        target.takeDamage(MISSILE.dmg, bearing(target, this), world);
-      }
-    }
+    if (target && dist(this, target) <= MISSILE.proximity) this.explode(world);
   }
 }
 
@@ -589,8 +710,8 @@ export class World {
     return s;
   }
 
-  spawnMissile(from: PlayerShip, targetId: number): Missile {
-    const m = new Missile(this.allocId(), from.x, from.y, from.heading, targetId, from.id);
+  spawnMissile(from: PlayerShip, targetId: number, missileType: "homing" | "nuke" | "emp" = "homing"): Missile {
+    const m = new Missile(this.allocId(), from.x, from.y, from.heading, targetId, from.id, missileType);
     this.entities.set(m.id, m);
     this.events.push({ k: "launch", x: from.x, y: from.y });
     return m;

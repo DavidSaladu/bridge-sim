@@ -52,7 +52,7 @@ export interface SnapEntity {
   typeName?: string;
 }
 
-export const SHIP_SYSTEMS = ["reactor", "beams", "missiles", "maneuver", "impulse", "warp", "shields"] as const;
+export const SHIP_SYSTEMS = ["reactor", "beams", "missiles", "maneuver", "impulse", "warp", "jump", "shields"] as const;
 export type ShipSystem = (typeof SHIP_SYSTEMS)[number];
 
 export const SYSTEM_LABELS: Record<ShipSystem, string> = {
@@ -62,6 +62,7 @@ export const SYSTEM_LABELS: Record<ShipSystem, string> = {
   maneuver: "Maniobra",
   impulse: "Impulso",
   warp: "Warp",
+  jump: "Salto",
   shields: "Escudos",
 };
 
@@ -74,9 +75,19 @@ export interface SnapSystem {
 
 export type TubeState = "empty" | "loading" | "loaded";
 
+export const MISSILE_TYPES = ["homing", "nuke", "emp"] as const;
+export type MissileType = (typeof MISSILE_TYPES)[number];
+
+export const MISSILE_LABELS: Record<MissileType, string> = {
+  homing: "Homing",
+  nuke: "Nuke",
+  emp: "EMP",
+};
+
 export interface SnapTube {
   state: TubeState;
   progress: number;
+  missile: MissileType | null;
 }
 
 export interface SnapShip {
@@ -104,6 +115,9 @@ export interface SnapShip {
   canDock: boolean;
   warp: number;
   hasWarp: boolean;
+  hasJump: boolean;
+  jump: { charge: number; cooldown: number; distance: number } | null;
+  ammo: Record<MissileType, number>;
 }
 
 export type SnapEvent =
@@ -137,8 +151,11 @@ export type ClientMsg =
   | { t: "helm"; cmd: "dock" }
   | { t: "helm"; cmd: "undock" }
   | { t: "helm"; cmd: "setWarp"; value: number }
+  | { t: "helm"; cmd: "chargeJump"; distance: number }
+  | { t: "helm"; cmd: "executeJump" }
+  | { t: "helm"; cmd: "abortJump" }
   | { t: "weapons"; cmd: "setTarget"; id: number | null }
-  | { t: "weapons"; cmd: "loadTube"; tube: number }
+  | { t: "weapons"; cmd: "loadTube"; tube: number; missile: MissileType }
   | { t: "weapons"; cmd: "fireTube"; tube: number }
   | { t: "weapons"; cmd: "shields"; up: boolean }
   | { t: "engineering"; cmd: "setPower"; system: ShipSystem; value: number }
