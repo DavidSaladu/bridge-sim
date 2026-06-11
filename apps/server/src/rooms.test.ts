@@ -41,8 +41,8 @@ describe("RoomManager", () => {
     const err = b2.msgs.find((m) => m.t === "error");
     expect(err).toBeDefined();
     const snap = room.snapshot();
-    expect(snap.players.find((p) => p.id === r1.id)?.station).toBe("helm");
-    expect(snap.players.find((p) => p.id === r2.id)?.station).toBeNull();
+    expect(snap.players.find((p) => p.id === r1.id)?.stations).toContain("helm");
+    expect(snap.players.find((p) => p.id === r2.id)?.stations).toHaveLength(0);
   });
 
   it("difunde el chat a todos", () => {
@@ -89,7 +89,7 @@ describe("Reconexión", () => {
     expect(r2.id).toBe(r1.id);
     const snap = room.snapshot();
     expect(snap.players).toHaveLength(1);
-    expect(snap.players[0]?.station).toBe("science");
+    expect(snap.players[0]?.stations).toContain("science");
     expect(snap.players[0]?.connected).toBe(true);
   });
 
@@ -135,6 +135,26 @@ describe("Partida", () => {
     room.handleMessage(r1.id, { t: "takeStation", station: "helm" });
     room.handleMessage(r1.id, { t: "helm", cmd: "setImpulse", value: 0.8 });
     expect(room.world?.ship.impulse).toBe(0.8);
+    room.stop();
+  });
+});
+
+describe("Multipuesto", () => {
+  it("un jugador puede ocupar varios puestos y dejar uno concreto", () => {
+    const room = new RoomManager().create();
+    const b = fakeOutbox();
+    const r = room.join("Solo", b);
+    if (!r.ok) throw new Error("join failed");
+    room.handleMessage(r.id, { t: "takeStation", station: "helm" });
+    room.handleMessage(r.id, { t: "takeStation", station: "weapons" });
+    room.handleMessage(r.id, { t: "takeStation", station: "captain" });
+    expect(room.snapshot().players[0]?.stations).toEqual(["helm", "weapons", "captain"]);
+    room.handleMessage(r.id, { t: "leaveStation", station: "weapons" });
+    expect(room.snapshot().players[0]?.stations).toEqual(["helm", "captain"]);
+    // y los comandos helm funcionan estando también de capitán
+    room.handleMessage(r.id, { t: "startGame" });
+    room.handleMessage(r.id, { t: "helm", cmd: "setImpulse", value: 0.5 });
+    expect(room.world?.ship.impulse).toBe(0.5);
     room.stop();
   });
 });

@@ -22,7 +22,7 @@ export const STATION_LABELS: Record<Station, string> = {
 export interface PlayerInfo {
   id: string;
   name: string;
-  station: Station | null;
+  stations: Station[];
   isHost: boolean;
   connected: boolean;
 }
@@ -68,7 +68,7 @@ export interface GameSnap {
 export type ClientMsg =
   | { t: "join"; name: string }
   | { t: "takeStation"; station: Station }
-  | { t: "leaveStation" }
+  | { t: "leaveStation"; station: Station }
   | { t: "chat"; text: string }
   | { t: "startGame" }
   | { t: "helm"; cmd: "setImpulse"; value: number }

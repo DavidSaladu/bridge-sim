@@ -81,7 +81,7 @@ export class Room {
       createdAt: this.createdAt,
       phase: this.phase,
       players: [...this.players.values()].map(
-        ({ id, name, station, isHost, connected }) => ({ id, name, station, isHost, connected }),
+        ({ id, name, stations, isHost, connected }) => ({ id, name, stations: [...stations], isHost, connected }),
       ),
     };
   }
@@ -97,7 +97,7 @@ export class Room {
     const player: Player = {
       id,
       name: cleanName,
-      station: null,
+      stations: [],
       isHost: this.players.size === 0,
       connected: true,
       outbox,
@@ -131,18 +131,20 @@ export class Room {
       case "takeStation": {
         if (!STATIONS.includes(msg.station)) return;
         const taken = [...this.players.values()].some(
-          (p) => p.station === msg.station && p.id !== playerId,
+          (p) => p.stations.includes(msg.station) && p.id !== playerId,
         );
         if (taken) {
           player.outbox?.send({ t: "error", code: "station_taken", message: "Puesto ocupado" });
           return;
         }
-        player.station = msg.station as Station;
-        this.broadcastRoom();
+        if (!player.stations.includes(msg.station)) {
+          player.stations.push(msg.station as Station);
+          this.broadcastRoom();
+        }
         break;
       }
       case "leaveStation":
-        player.station = null;
+        player.stations = player.stations.filter((st) => st !== msg.station);
         this.broadcastRoom();
         break;
       case "chat": {
@@ -157,7 +159,7 @@ export class Room {
         }
         break;
       case "helm": {
-        if (player.station !== "helm") {
+        if (!player.stations.includes("helm")) {
           player.outbox?.send({ t: "error", code: "wrong_station", message: "No estás en Pilotaje" });
           return;
         }

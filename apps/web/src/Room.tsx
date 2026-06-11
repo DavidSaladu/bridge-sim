@@ -11,6 +11,7 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
   const [selfId, setSelfId] = useState("");
   const [chat, setChat] = useState<ChatLine[]>([]);
   const [snap, setSnap] = useState<GameSnap | null>(null);
+  const [activeStation, setActiveStation] = useState<Station | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
   const [status, setStatus] = useState<"connecting" | "connected" | "reconnecting">("connecting");
@@ -79,13 +80,29 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
   const me = room?.players.find((p) => p.id === selfId);
   const voice = useVoice(code, selfId, resumeKey);
   const playing = room?.phase === "playing";
+  const myStations = me?.stations ?? [];
+  const shownStation = activeStation && myStations.includes(activeStation)
+    ? activeStation
+    : myStations[0] ?? null;
+
+  useEffect(() => {
+    if (!playing) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement) return;
+      const idx = Number(e.key) - 1;
+      const mine = me?.stations ?? [];
+      if (idx >= 0 && idx < mine.length) setActiveStation(mine[idx] ?? null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [playing, me]);
 
   function send(msg: object) {
     if (wsRef.current?.readyState === 1) wsRef.current.send(JSON.stringify(msg));
   }
 
   function toggleStation(station: Station) {
-    if (me?.station === station) send({ t: "leaveStation" });
+    if (me?.stations.includes(station)) send({ t: "leaveStation", station });
     else send({ t: "takeStation", station });
     setError("");
   }
@@ -123,7 +140,26 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
 
       {playing && (
         <div style={{ marginBottom: "1rem" }}>
-          <StationView station={me?.station ?? null} snap={snap} send={send} />
+          {myStations.length > 1 && (
+            <div className="row" style={{ marginBottom: "0.5rem" }}>
+              {myStations.map((st, i) => (
+                <button
+                  key={st}
+                  onClick={() => setActiveStation(st)}
+                  style={{
+                    padding: "0.3rem 0.8rem",
+                    fontSize: "0.85rem",
+                    background: st === shownStation ? "var(--accent)" : "var(--accent-dim)",
+                    color: st === shownStation ? "#082f49" : undefined,
+                  }}
+                >
+                  {i + 1}. {STATION_LABELS[st]}
+                </button>
+              ))}
+              <span className="muted">teclas 1-{myStations.length} para cambiar</span>
+            </div>
+          )}
+          <StationView station={shownStation} snap={snap} send={send} />
         </div>
       )}
 
@@ -138,7 +174,7 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
 
       <div className="stations" style={playing ? { gridTemplateColumns: "repeat(6, 1fr)", gap: "0.4rem" } : undefined}>
         {STATIONS.map((s) => {
-          const holder = room?.players.find((p) => p.station === s);
+          const holder = room?.players.find((p) => p.stations.includes(s));
           const mine = holder?.id === selfId;
           const speaking = holder ? voice.speakingIds.has(holder.id) : false;
           return (
