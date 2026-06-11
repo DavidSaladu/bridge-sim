@@ -82,7 +82,9 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
         }
       };
       ws.onclose = () => {
-        if (closedByUser.current) return;
+        // Solo reconectar si este socket sigue siendo el vigente: evita que
+        // dos montajes (StrictMode) se maten y resuciten mutuamente en bucle.
+        if (closedByUser.current || wsRef.current !== ws) return;
         setStatus("reconnecting");
         retryTimer = setTimeout(connect, 1500);
       };
