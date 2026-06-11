@@ -71,6 +71,7 @@ const DOCK_RANGE = 1000;
 const DOCK_MAX_SPEED = 40;
 const NEBULA_SIGHT = 5000;
 const MINE_TRIGGER = 600;
+const ASTEROID_HIT_RADIUS = 180;
 const MINE_BLAST = 900;
 const MINE_DMG = 60;
 const MISSILE = { speed: 220, turnRate: 100, dmg: 35, life: 40, proximity: 80 };
@@ -966,6 +967,26 @@ export class World {
   tick(dt = 1 / this.tickRate): void {
     this.time += dt;
     for (const e of this.entities.values()) e.update(dt, this);
+    // Colisiones nave ↔ asteroide: daño por velocidad, frenazo y rebote
+    for (const e of this.entities.values()) {
+      if (!(e instanceof MovingShip) || e.dead) continue;
+      for (const a of this.entities.values()) {
+        if (!(a instanceof Asteroid) || a.dead) continue;
+        const d = dist(e, a);
+        if (d < ASTEROID_HIT_RADIUS) {
+          const dmg = Math.max(4, Math.abs(e.speed) * 0.25);
+          e.takeDamage(dmg, bearing(e, a), this);
+          this.events.push({ k: "boom", x: (e.x + a.x) / 2, y: (e.y + a.y) / 2, big: false });
+          // Empujar fuera del asteroide y matar la velocidad
+          const nx = (e.x - a.x) / (d || 1);
+          const ny = (e.y - a.y) / (d || 1);
+          const push = ASTEROID_HIT_RADIUS + 10 - d;
+          e.x += nx * push;
+          e.y += ny * push;
+          e.speed = Math.min(e.speed, 8);
+        }
+      }
+    }
     for (const [id, e] of this.entities) {
       if (e.dead && e !== this.ship) this.entities.delete(id);
     }

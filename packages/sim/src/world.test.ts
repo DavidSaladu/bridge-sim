@@ -496,3 +496,31 @@ describe("Escaneo profundo y misiles enemigos", () => {
     expect(missileSeen).toBe(true);
   });
 });
+
+describe("Colisiones con asteroides", () => {
+  it("chocar a toda velocidad daña, frena y empuja fuera", () => {
+    const w = new World(15);
+    w.addAsteroid(0, 1500);
+    w.ship.engineering.setPower("shields", 0); // sin recarga para medir
+    w.ship.setImpulse(1);
+    const total0 = w.ship.shieldFront + w.ship.shieldRear + w.ship.hull;
+    let collided = false;
+    for (let i = 0; i < 20 * 30 && !collided; i++) {
+      w.tick();
+      collided = w.ship.shieldFront + w.ship.shieldRear + w.ship.hull < total0;
+    }
+    expect(collided).toBe(true);
+    expect(w.ship.speed).toBeLessThan(20); // frenazo
+    // y no atraviesa: queda fuera del radio de colisión
+    const d = Math.hypot(w.ship.x - 0, w.ship.y - 1500);
+    expect(d).toBeGreaterThanOrEqual(180);
+  });
+
+  it("la IA también sufre colisiones", () => {
+    const w = new World(15);
+    const c = w.addCpuShip(0, 3000, "KR-C", "Flavia Falcon", "Independent");
+    w.addAsteroid(0, 3000); // encima
+    w.tick();
+    expect(c.shield + c.hull).toBeLessThan(c.shieldMax + c.spec.hullMax);
+  });
+});
