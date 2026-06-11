@@ -448,23 +448,7 @@ function ScienceView({ snap, send, events }: { snap: GameSnap; send: (m: object)
               <p className="muted" style={{ margin: "0.25rem 0" }}>
                 Distancia {(distOf(sel) / 1000).toFixed(1)} km · Marcación {bearingOf(sel)}°
               </p>
-              {sel.scanned ? (
-                <>
-                  <p style={{ margin: "0.25rem 0" }}>
-                    Facción: <b style={{ color: sel.faction === "hostile" ? "#f87171" : "#a3e635" }}>
-                      {sel.faction === "hostile" ? "HOSTIL" : "neutral"}
-                    </b>
-                  </p>
-                  <Bar label={`Casco ${Math.round((sel.hullFrac ?? 0) * 100)}%`} frac={sel.hullFrac ?? 0} color="#f87171" />
-                  <Bar label={`Escudos ${Math.round((sel.shieldFrac ?? 0) * 100)}%`} frac={sel.shieldFrac ?? 0} color="#38bdf8" />
-                  {sel.shieldFreq != null && (
-                    <p className="muted" style={{ fontSize: "0.78rem", margin: "0.25rem 0" }}>
-                      Frecuencias — escudo: <b style={{ color: "#7dd3fc" }}>{sel.shieldFreq} THz</b> · rayos: <b style={{ color: "#7dd3fc" }}>{sel.beamFreq} THz</b>
-                      <br />Pásaselas a Armamento para calibrar.
-                    </p>
-                  )}
-                </>
-              ) : scanning?.targetId === sel.id ? (
+              {scanning?.targetId === sel.id ? (
                 <div>
                   <Bar label={`Análisis ${Math.round(scanning.progress * 100)}%`} frac={scanning.progress} color="#facc15" />
                   <p className="muted" style={{ fontSize: "0.78rem", margin: "0.4rem 0 0.2rem" }}>
@@ -489,12 +473,38 @@ function ScienceView({ snap, send, events }: { snap: GameSnap; send: (m: object)
                     </div>
                   ))}
                 </div>
+              ) : sel.scanned ? (
+                <>
+                  <p style={{ margin: "0.25rem 0" }}>
+                    Facción: <b style={{ color: sel.faction === "hostile" ? "#f87171" : "#a3e635" }}>
+                      {sel.faction === "hostile" ? "HOSTIL" : "neutral"}
+                    </b>
+                  </p>
+                  <Bar label={`Casco ${Math.round((sel.hullFrac ?? 0) * 100)}%`} frac={sel.hullFrac ?? 0} color="#f87171" />
+                  <Bar label={`Escudos ${Math.round((sel.shieldFrac ?? 0) * 100)}%`} frac={sel.shieldFrac ?? 0} color="#38bdf8" />
+                  {sel.scanLevel === 1 && (
+                    <div style={{ marginTop: "0.4rem" }}>
+                      <p className="muted" style={{ fontSize: "0.78rem", margin: "0 0 0.25rem" }}>
+                        Escaneo básico completado. Uno profundo revelará sus frecuencias (sintonía más exigente).
+                      </p>
+                      <button onClick={() => { setTune([50, 50]); send({ t: "science", cmd: "scan", id: sel.id }); }}>
+                        🔬 Escaneo profundo
+                      </button>
+                    </div>
+                  )}
+                  {sel.shieldFreq != null && (
+                    <p className="muted" style={{ fontSize: "0.78rem", margin: "0.25rem 0" }}>
+                      Frecuencias — escudo: <b style={{ color: "#7dd3fc" }}>{sel.shieldFreq} THz</b> · rayos: <b style={{ color: "#7dd3fc" }}>{sel.beamFreq} THz</b>
+                      <br />Pásaselas a Armamento para calibrar.
+                    </p>
+                  )}
+                </>
               ) : (
                 <button
                   style={{ marginTop: "0.4rem" }}
-                  onClick={() => send({ t: "science", cmd: "scan", id: sel.id })}
+                  onClick={() => { setTune([50, 50]); send({ t: "science", cmd: "scan", id: sel.id }); }}
                 >
-                  🛰 Escanear (6 s)
+                  🛰 Escanear
                 </button>
               )}
             </div>
