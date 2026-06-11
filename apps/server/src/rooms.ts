@@ -118,6 +118,11 @@ export class Room {
       resumeKey,
     };
     this.players.set(id, player);
+    // Garantía: siempre debe haber un host CONECTADO. Si no lo hay, este jugador lo es.
+    if (![...this.players.values()].some((p) => p.isHost && p.connected)) {
+      for (const p of this.players.values()) p.isHost = false;
+      player.isHost = true;
+    }
     outbox.send({ t: "welcome", selfId: id, resumeKey, room: this.snapshot() });
     this.broadcastRoom(id);
     return { ok: true, id };

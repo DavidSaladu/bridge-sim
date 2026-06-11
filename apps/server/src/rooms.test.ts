@@ -195,3 +195,17 @@ describe("Traspaso de host", () => {
     expect(snap.players.find((p) => p.id === r1.id)?.isHost).toBe(false);
   });
 });
+
+describe("Host con StrictMode (conexión doble)", () => {
+  it("si el host fantasma está desconectado y entra alguien nuevo, el nuevo es host", () => {
+    const room = new RoomManager().create();
+    const r1 = room.join("A", fakeOutbox());
+    if (!r1.ok) throw new Error("join failed");
+    room.disconnect(r1.id); // queda fantasma con isHost
+    const r2 = room.join("A", fakeOutbox()); // remontaje de StrictMode
+    if (!r2.ok) throw new Error("join failed");
+    const snap = room.snapshot();
+    expect(snap.players.find((p) => p.id === r2.id)?.isHost).toBe(true);
+    expect(snap.players.filter((p) => p.isHost)).toHaveLength(1);
+  });
+});
