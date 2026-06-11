@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@bridge/shared": "*",
+    "livekit-client": "^2.19.2",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },

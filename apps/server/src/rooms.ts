@@ -37,6 +37,12 @@ export class Room {
     return this.players.size;
   }
 
+  /** Devuelve el jugador que corresponde a una resumeKey (para autenticar peticiones REST). */
+  authByResumeKey(resumeKey: string): { id: string; name: string } | null {
+    const p = [...this.players.values()].find((x) => x.resumeKey === resumeKey);
+    return p ? { id: p.id, name: p.name } : null;
+  }
+
   snapshot(): RoomSnapshot {
     return {
       code: this.code,

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { RoomSnapshot, ServerMsg, Station } from "@bridge/shared";
 import { STATIONS, STATION_LABELS } from "@bridge/shared";
+import { useVoice } from "./useVoice.js";
 
 interface ChatLine { fromName: string; text: string; ts: number }
 
@@ -12,7 +13,8 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
   const [error, setError] = useState("");
   const [status, setStatus] = useState<"connecting" | "connected" | "reconnecting">("connecting");
   const wsRef = useRef<WebSocket | null>(null);
-  const resumeKeyRef = useRef<string | null>(sessionStorage.getItem(`resume:${code}`));
+  const [resumeKey, setResumeKey] = useState<string | null>(sessionStorage.getItem(`resume:${code}`));
+  const resumeKeyRef = useRef<string | null>(resumeKey);
   const closedByUser = useRef(false);
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -34,6 +36,7 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
           case "welcome":
             setSelfId(msg.selfId);
             resumeKeyRef.current = msg.resumeKey;
+            setResumeKey(msg.resumeKey);
             sessionStorage.setItem(`resume:${code}`, msg.resumeKey);
             setRoom(msg.room);
             setError("");
@@ -69,6 +72,7 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
   }, [chat]);
 
   const me = room?.players.find((p) => p.id === selfId);
+  const voice = useVoice(code, selfId, resumeKey);
 
   function send(msg: object) {
     if (wsRef.current?.readyState === 1) wsRef.current.send(JSON.stringify(msg));
@@ -100,21 +104,30 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
         <span className="muted">
           {status === "reconnecting" ? "⟳ Reconectando…" : `${room?.players.filter((p) => p.connected).length ?? 0}/6 a bordo`}
         </span>
-        <button onClick={leave}>Salir</button>
+        <span className="row">
+          <span className="muted">
+            {voice.status === "on" ? "🎙 Voz activa" : voice.status === "connecting" ? "🎙 Conectando voz…" : voice.status === "error" ? "🎙 Voz no disponible" : "🎙 Voz apagada"}
+          </span>
+          {voice.status === "on" && (
+            <button onClick={voice.toggleMute}>{voice.muted ? "Activar micro" : "Silenciar"}</button>
+          )}
+          <button onClick={leave}>Salir</button>
+        </span>
       </div>
 
       <div className="stations">
         {STATIONS.map((s) => {
           const holder = room?.players.find((p) => p.station === s);
           const mine = holder?.id === selfId;
+          const speaking = holder ? voice.speakingIds.has(holder.id) : false;
           return (
             <div
               key={s}
-              className={`station${holder ? " taken" : ""}${mine ? " mine" : ""}`}
+              className={`station${holder ? " taken" : ""}${mine ? " mine" : ""}${speaking ? " speaking" : ""}`}
               onClick={() => (!holder || mine) && toggleStation(s)}
             >
               <h3>{STATION_LABELS[s]}</h3>
-              <p>{holder ? holder.name + (holder.connected ? "" : " (desconectado)") : "Libre"}</p>
+              <p>{speaking ? "🔊 " : ""}{holder ? holder.name + (holder.connected ? "" : " (desconectado)") : "Libre"}</p>
             </div>
           );
         })}

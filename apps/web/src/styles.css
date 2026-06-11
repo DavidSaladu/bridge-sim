@@ -68,3 +68,4 @@ input {
   border-radius: 6px;
 }
 .muted { color: var(--text-dim); font-size: 0.85rem; }
+.station.speaking { border-color: #4ade80; box-shadow: 0 0 14px rgba(74, 222, 128, 0.45); }

@@ -5,7 +5,17 @@ import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
 import type { ClientMsg } from "@bridge/shared";
+import { AccessToken } from "livekit-server-sdk";
 import { RoomManager, type Outbox } from "./rooms.js";
+
+// Carga .env simple (producción en Hostinger no tiene gestor de secretos)
+try {
+  const envFile = fs.readFileSync(path.resolve(process.cwd(), ".env"), "utf8");
+  for (const line of envFile.split("\n")) {
+    const m = line.match(/^([A-Z_]+)=(.*)$/);
+    if (m && m[1] && process.env[m[1]] === undefined) process.env[m[1]] = m[2];
+  }
+} catch { /* sin .env */ }
 
 const PORT = Number(process.env.PORT ?? 3001);
 const PUBLIC_DIR = path.resolve(process.cwd(), "public");
@@ -23,6 +33,27 @@ async function main(): Promise<void> {
     const room = manager.create();
     return { code: room.code };
   });
+
+  app.post<{ Params: { code: string }; Body: { resumeKey?: string } }>(
+    "/api/rooms/:code/voice",
+    async (req, reply) => {
+      const { LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET } = process.env;
+      if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+        return reply.code(503).send({ error: "Voz no configurada" });
+      }
+      const room = manager.get(req.params.code);
+      if (!room) return reply.code(404).send({ error: "Sala no encontrada" });
+      const player = req.body?.resumeKey ? room.authByResumeKey(req.body.resumeKey) : null;
+      if (!player) return reply.code(401).send({ error: "No autorizado" });
+      const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+        identity: player.id,
+        name: player.name,
+        ttl: "6h",
+      });
+      at.addGrant({ roomJoin: true, room: room.code, canPublish: true, canSubscribe: true });
+      return { token: await at.toJwt(), url: LIVEKIT_URL };
+    },
+  );
 
   app.get<{ Params: { code: string } }>("/api/rooms/:code", async (req, reply) => {
     const room = manager.get(req.params.code);

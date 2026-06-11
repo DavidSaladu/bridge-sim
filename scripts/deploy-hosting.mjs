@@ -31,6 +31,11 @@ run(
 
 console.log("3/4 Empaquetando…");
 fs.cpSync(path.join(root, "apps/web/dist"), path.join(out, "public"), { recursive: true });
+const lk = ["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"]
+  .filter((k) => process.env[k])
+  .map((k) => `${k}=${process.env[k]}`)
+  .join("\n");
+if (lk) fs.writeFileSync(path.join(out, ".env"), lk + "\n");
 fs.writeFileSync(
   path.join(out, "package.json"),
   JSON.stringify({ name: "bridge-sim", version: "0.1.0", main: "server.js", scripts: { start: "node server.js" } }, null, 2),
