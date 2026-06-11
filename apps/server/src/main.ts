@@ -36,6 +36,12 @@ async function main(): Promise<void> {
     getScenarioLibrary().map(({ id, name, description }) => ({ id, name, description })),
   );
 
+  app.get<{ Params: { id: string } }>("/api/scenarios/:id/source", async (req, reply) => {
+    const sc = getScenarioLibrary().find((x) => x.id === req.params.id);
+    if (!sc) return reply.code(404).send({ error: "Escenario no encontrado" });
+    return { id: sc.id, name: sc.name, source: sc.source };
+  });
+
   app.post("/api/rooms", async () => {
     const room = manager.create();
     return { code: room.code };

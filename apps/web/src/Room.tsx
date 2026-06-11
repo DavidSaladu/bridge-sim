@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ScenarioInfo } from "@bridge/shared";
+import { ScenarioEditor } from "./ScenarioEditor.js";
 import type { GameSnap, RoomSnapshot, ServerMsg, Station } from "@bridge/shared";
 import { STATIONS, STATION_LABELS } from "@bridge/shared";
 import { useVoice } from "./useVoice.js";
@@ -18,6 +19,7 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
   const [channel, setChannel] = useState<CommsChannel | null>(null);
   const [scenarios, setScenarios] = useState<ScenarioInfo[]>([]);
   const [customName, setCustomName] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/scenarios").then((r) => r.json()).then(setScenarios).catch(() => {});
@@ -232,6 +234,9 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
               ))}
               {customName && <option value="custom">{customName} (propio)</option>}
             </select>
+            <button onClick={() => setEditorOpen(true)} style={{ fontSize: "0.85rem" }}>
+              🛠 Editor
+            </button>
             <label style={{ cursor: "pointer", border: "1px dashed var(--accent-dim)", borderRadius: 4, padding: "0.4rem 0.8rem", fontSize: "0.85rem" }}>
               📂 Subir .lua
               <input
@@ -261,6 +266,18 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
         <p className="muted" style={{ marginBottom: "1rem" }}>
           Escenario: <b style={{ color: "var(--accent)" }}>{room.scenario.name}</b> — esperando al host…
         </p>
+      )}
+
+      {editorOpen && (
+        <ScenarioEditor
+          scenarios={scenarios}
+          onClose={() => setEditorOpen(false)}
+          onUse={(name, source) => {
+            setCustomName(name);
+            send({ t: "uploadScenario", name, source });
+            setEditorOpen(false);
+          }}
+        />
       )}
 
       <div className="stations" style={playing ? { gridTemplateColumns: "repeat(6, 1fr)", gap: "0.4rem" } : undefined}>
