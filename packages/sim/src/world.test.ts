@@ -460,3 +460,39 @@ describe("Frecuencias, maniobras y autodestrucción", () => {
     expect(w.playerDead).toBe(true);
   });
 });
+
+describe("Escaneo profundo y misiles enemigos", () => {
+  it("nivel 1 revela tipo sin frecuencias; nivel 2 las desbloquea", () => {
+    const w = new World(14);
+    const c = w.addCpuShip(0, 1000, "DS-X");
+    // escaneo básico
+    w.ship.startScan(c.id, w);
+    w.ship.setScanTune(w.ship.scanBands[0], w.ship.scanBands[1]);
+    for (let i = 0; i < 20 * 3; i++) w.tick();
+    let e = w.snapshot().entities.find((x) => x.id === c.id)!;
+    expect(e.scanLevel).toBe(1);
+    expect(e.typeName).toBeDefined();
+    expect(e.shieldFreq).toBeUndefined();
+    // escaneo profundo
+    expect(w.ship.startScan(c.id, w)).toBe(true);
+    w.ship.setScanTune(w.ship.scanBands[0], w.ship.scanBands[1]);
+    for (let i = 0; i < 20 * 3; i++) w.tick();
+    e = w.snapshot().entities.find((x) => x.id === c.id)!;
+    expect(e.scanLevel).toBe(2);
+    expect(e.shieldFreq).toBeDefined();
+    // nivel 2: no se puede volver a escanear
+    expect(w.ship.startScan(c.id, w)).toBe(false);
+  });
+
+  it("los Phobos disparan misiles al jugador", () => {
+    const w = new World(14);
+    const c = w.addCpuShip(0, 2000, "KR-M", "Phobos T3", "Kraylor");
+    c.heading = 180; c.targetHeading = 180;
+    let missileSeen = false;
+    for (let i = 0; i < 20 * 40 && !missileSeen; i++) {
+      w.tick();
+      missileSeen = [...w.allEntities()].some((e) => e.kind === "missile");
+    }
+    expect(missileSeen).toBe(true);
+  });
+});

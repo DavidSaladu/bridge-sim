@@ -245,9 +245,9 @@ function CommsView({ snap, send, events, channel }: { snap: GameSnap; send: (m: 
               </div>
             </div>
           ) : sel ? (
-            sel.scanned ? (
+            sel.scanned || sel.kind === "station" ? (
               <button onClick={() => send({ t: "comms", cmd: "hail", id: sel.id })}>
-                📡 Abrir canal con {sel.callSign}
+                📡 Abrir canal con {sel.callSign ?? "estación"}
               </button>
             ) : (
               <p className="muted">Contacto sin escanear: pide a Ciencia que lo identifique antes de llamar.</p>

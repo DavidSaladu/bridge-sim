@@ -11,6 +11,7 @@ export interface EntityState {
   hullFrac?: number;
   shieldFrac?: number;
   scanned?: boolean;
+  scanLevel?: number;
   radius?: number;
   typeName?: string;
   beamFreq?: number;

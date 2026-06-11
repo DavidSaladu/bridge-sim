@@ -57,6 +57,7 @@ export const TEMPLATES = {
     accel: 20,
     shield: 50,
     beam: { range: 1200, arc: 90, cycle: 6, dmg: 6 },
+    tubes: 1,
   },
   "Adder MK5": {
     name: "Adder MK5",

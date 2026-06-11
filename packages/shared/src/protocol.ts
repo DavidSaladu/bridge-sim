@@ -55,6 +55,7 @@ export interface SnapEntity {
   hullFrac?: number;
   shieldFrac?: number;
   scanned?: boolean;
+  scanLevel?: number;
   radius?: number;
   typeName?: string;
   beamFreq?: number;

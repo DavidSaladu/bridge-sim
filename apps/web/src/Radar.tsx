@@ -271,7 +271,7 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
       const scale = size / 2 / range;
       let best: { id: number; d: number } | null = null;
       for (const e of snap.entities) {
-        if (e.kind !== "cpu") continue;
+        if (e.kind !== "cpu" && e.kind !== "station") continue;
         const ex = (e.x - snap.ship.x) * scale;
         const ey = -(e.y - snap.ship.y) * scale;
         const d = Math.hypot(ex - px, ey - py);

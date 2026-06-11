@@ -8,7 +8,7 @@ import type {
 } from "@bridge/shared";
 import { MAX_CHAT_LENGTH, MAX_NAME_LENGTH, MAX_PLAYERS, STATIONS } from "@bridge/shared";
 import type { RoomPhase } from "@bridge/shared";
-import { CpuShip, World, createTestScenario, dist } from "@bridge/sim";
+import { CpuShip, SpaceStation, World, createTestScenario, dist } from "@bridge/sim";
 import { ScenarioRunner } from "@bridge/lua-api";
 import { MAX_SCENARIO_SIZE, loadScenarioLibrary, type Scenario } from "./scenarios.js";
 
@@ -411,6 +411,22 @@ export class Room {
             break;
           case "hail": {
             const target = world.get(typeof msg.id === "number" ? msg.id : -1);
+            if (target instanceof SpaceStation) {
+              if (dist(world.ship, target) > 20000) {
+                player.outbox?.send({ t: "error", code: "hail_failed", message: "Fuera de alcance de comunicaciones" });
+                return;
+              }
+              player.channelTargetId = target.id;
+              player.outbox?.send({
+                t: "commsChannel",
+                channel: {
+                  callSign: target.callSign,
+                  text: "Aquí " + target.callSign + ". Canal abierto, " + (world.ship.callSign ?? "nave") + ". ¿Situación?",
+                  options: ["Solicitar informe táctico", "Cerrar canal"],
+                },
+              });
+              return;
+            }
             if (!(target instanceof CpuShip) || !target.scanned) {
               player.outbox?.send({ t: "error", code: "hail_failed", message: "Solo puedes llamar a contactos escaneados" });
               return;
@@ -425,6 +441,25 @@ export class Room {
           }
           case "choose": {
             const target = player.channelTargetId != null ? world.get(player.channelTargetId) : undefined;
+            if (target instanceof SpaceStation) {
+              if (msg.index === 0) {
+                const hostiles = world.hostilesAlive;
+                player.outbox?.send({
+                  t: "commsChannel",
+                  channel: {
+                    callSign: target.callSign,
+                    text: hostiles > 0
+                      ? "Nuestros sensores detectan " + hostiles + " contacto(s) hostil(es) activo(s) en el sector. Podéis atracar para reparaciones y reabastecimiento."
+                      : "Sector despejado. Buen trabajo. Atracad cuando queráis.",
+                    options: ["Solicitar informe táctico", "Cerrar canal"],
+                  },
+                });
+              } else {
+                player.channelTargetId = null;
+                player.outbox?.send({ t: "commsChannel", channel: null });
+              }
+              break;
+            }
             if (!(target instanceof CpuShip)) return;
             this.handleChannelChoice(player, target, msg.index);
             break;

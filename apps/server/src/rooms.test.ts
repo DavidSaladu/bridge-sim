@@ -399,3 +399,22 @@ describe("Autodestrucción", () => {
     expect(b1.msgs.some((m) => m.t === "gameOver" && !m.victory)).toBe(true);
   });
 });
+
+describe("Comms con estaciones", () => {
+  it("se puede llamar a DS-1 y pedir informe táctico", () => {
+    const room = new RoomManager().create();
+    const b = fakeOutbox();
+    const r = room.join("Com", b);
+    if (!r.ok) throw new Error("join failed");
+    room.handleMessage(r.id, { t: "takeStation", station: "comms" });
+    room.handleMessage(r.id, { t: "startGame" });
+    const station = [...room.world!.allEntities()].find((e) => e.kind === "station")!;
+    room.handleMessage(r.id, { t: "comms", cmd: "hail", id: station.id });
+    const ch = b.msgs.filter((m) => m.t === "commsChannel").pop();
+    expect(ch && ch.t === "commsChannel" && ch.channel?.callSign).toBe("DS-1");
+    room.handleMessage(r.id, { t: "comms", cmd: "choose", index: 0 });
+    const rep = b.msgs.filter((m) => m.t === "commsChannel").pop();
+    expect(rep && rep.t === "commsChannel" && /hostil/.test(rep.channel?.text ?? "")).toBe(true);
+    room.stop();
+  });
+});

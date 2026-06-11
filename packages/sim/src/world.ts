@@ -333,7 +333,7 @@ export class PlayerShip extends MovingShip {
 
   startScan(id: number, world: World): boolean {
     const target = world.get(id);
-    if (!target || !(target instanceof CpuShip) || target.scanned) return false;
+    if (!target || !(target instanceof CpuShip) || target.scanLevel >= 2) return false;
     if (dist(this, target) > SCAN_RANGE) return false;
     this.scanTargetId = id;
     this.scanProgress = 0;
@@ -547,15 +547,16 @@ export class PlayerShip extends MovingShip {
         this.cancelScan();
       } else {
         // Minijuego: el progreso avanza con las dos bandas bien sintonizadas y decae si no
-        const close0 = Math.abs(this.scanTune[0] - this.scanBands[0]) <= 8;
-        const close1 = Math.abs(this.scanTune[1] - this.scanBands[1]) <= 8;
+        const tol = target.scanLevel >= 1 ? 5 : 8; // el escaneo profundo exige más precisión
+        const close0 = Math.abs(this.scanTune[0] - this.scanBands[0]) <= tol;
+        const close1 = Math.abs(this.scanTune[1] - this.scanBands[1]) <= tol;
         if (close0 && close1) {
           this.scanProgress += dt / 2.5;
         } else {
           this.scanProgress = Math.max(0, this.scanProgress - dt / 5);
         }
         if (this.scanProgress >= 1) {
-          target.scanned = true;
+          target.scanLevel = Math.min(2, target.scanLevel + 1);
           this.cancelScan();
         }
       }
@@ -656,7 +657,6 @@ export class CpuShip extends MovingShip {
   callSign: string;
   template: ShipTemplate;
   factionName: FactionName;
-  scanned = false;
   surrendered = false;
   shield: number;
   shieldMax: number;
@@ -681,6 +681,16 @@ export class CpuShip extends MovingShip {
 
   beamFreq: number;
   shieldFreq: number;
+  scanLevel = 0;
+  private missileCd = 20;
+
+  get scanned(): boolean {
+    return this.scanLevel > 0;
+  }
+
+  set scanned(v: boolean) {
+    this.scanLevel = v ? 2 : 0;
+  }
 
   get hostile(): boolean {
     return this.factionName === "Kraylor" && !this.surrendered;
@@ -728,6 +738,14 @@ export class CpuShip extends MovingShip {
         world.events.push({ k: "beam", fx: this.x, fy: this.y, tx: player.x, ty: player.y, hostile: true });
         player.takeDamage(beam.dmg, bearing(player, this), world, this.beamFreq);
       }
+      // Misiles enemigos (plantillas con tubos)
+      if ((this.template.tubes ?? 0) > 0) {
+        this.missileCd -= dt;
+        if (this.missileCd <= 0 && d < 3500) {
+          this.missileCd = 22 + this.rng() * 10;
+          world.spawnMissileFrom(this, player.id, "homing");
+        }
+      }
     } else {
       this.nextDecision -= dt;
       if (this.nextDecision <= 0) {
@@ -757,11 +775,11 @@ export class CpuShip extends MovingShip {
   }
 
   override state(): EntityState {
-    if (!this.scanned) {
+    if (this.scanLevel === 0) {
       // Sin escanear: contacto anónimo, sin facción ni estado
-      return { ...super.state(), scanned: false };
+      return { ...super.state(), scanned: false, scanLevel: 0 };
     }
-    return {
+    const base: EntityState = {
       ...super.state(),
       callSign: this.callSign,
       faction: this.hostile ? "hostile" : "neutral",
@@ -769,9 +787,13 @@ export class CpuShip extends MovingShip {
       hullFrac: this.hull / this.spec.hullMax,
       shieldFrac: this.shield / this.shieldMax,
       scanned: true,
-      beamFreq: this.beamFreq,
-      shieldFreq: this.shieldFreq,
+      scanLevel: this.scanLevel,
     };
+    if (this.scanLevel >= 2) {
+      base.beamFreq = this.beamFreq;
+      base.shieldFreq = this.shieldFreq;
+    }
+    return base;
   }
 }
 
@@ -911,6 +933,10 @@ export class World {
   }
 
   spawnMissile(from: PlayerShip, targetId: number, missileType: "homing" | "nuke" | "emp" = "homing"): Missile {
+    return this.spawnMissileFrom(from, targetId, missileType);
+  }
+
+  spawnMissileFrom(from: Entity, targetId: number, missileType: "homing" | "nuke" | "emp" = "homing"): Missile {
     const m = new Missile(this.allocId(), from.x, from.y, from.heading, targetId, from.id, missileType);
     this.entities.set(m.id, m);
     this.events.push({ k: "launch", x: from.x, y: from.y });

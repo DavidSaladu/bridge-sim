@@ -36,6 +36,43 @@ function makeNebulaTexture(hue: number): THREE.Texture {
   return tex;
 }
 
+function makeFreighterMesh(): THREE.Group {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x8b9a6b, metalness: 0.4, roughness: 0.6 });
+  const cargoMat = new THREE.MeshStandardMaterial({ color: 0xb08c4f, metalness: 0.3, roughness: 0.7 });
+  const spine = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 12), mat);
+  g.add(spine);
+  for (let i = 0; i < 3; i++) {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(3.5, 2.5, 3), cargoMat);
+    box.position.z = -3.5 + i * 3.6;
+    box.position.y = 0.6;
+    g.add(box);
+  }
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2, 2.5), mat);
+  cab.position.z = -6.5;
+  g.add(cab);
+  g.scale.setScalar(4);
+  return g;
+}
+
+function makeInterceptorMesh(color: number, emissive: number): THREE.Group {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color, metalness: 0.75, roughness: 0.3 });
+  const glowMat = new THREE.MeshStandardMaterial({ color: emissive, emissive, emissiveIntensity: 2.5 });
+  const body = new THREE.Mesh(new THREE.ConeGeometry(1.4, 9, 4), mat);
+  body.rotation.x = -Math.PI / 2;
+  g.add(body);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(11, 0.25, 3.2), mat);
+  wing.position.z = 2.5;
+  g.add(wing);
+  const eng = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 1, 8), glowMat);
+  eng.rotation.x = -Math.PI / 2;
+  eng.position.z = 4.6;
+  g.add(eng);
+  g.scale.setScalar(3.2);
+  return g;
+}
+
 function makeShipMesh(color: number, emissive: number): THREE.Group {
   const group = new THREE.Group();
   const mat = new THREE.MeshStandardMaterial({ color, metalness: 0.7, roughness: 0.35 });
@@ -94,6 +131,10 @@ export class Scene3D {
   private camera: THREE.PerspectiveCamera;
   private tracked = new Map<number, Tracked>();
   private fx: { obj: THREE.Object3D; born: number; ttl: number; boom?: boolean }[] = [];
+  private shake = 0;
+  private shipSpeed = 0;
+  private shieldFlashAt = 0;
+  private shieldBubble: THREE.Mesh | null = null;
   private selfShip: Tracked | null = null;
   private lastSnapAt = 0;
   private raf = 0;
@@ -192,7 +233,22 @@ export class Scene3D {
 
   updateSnap(snap: GameSnap): void {
     this.lastSnapAt = performance.now();
-    for (const ev of snap.events) this.spawnFx(ev);
+    this.shipSpeed = Math.abs(snap.ship.speed);
+    for (const ev of snap.events) {
+      this.spawnFx(ev);
+      // Impactos sobre nuestra nave: flash de escudo + sacudida
+      if (ev.k === "beam" && ev.hostile) {
+        const d = Math.hypot(ev.tx - snap.ship.x, ev.ty - snap.ship.y);
+        if (d < 200) {
+          this.shieldFlashAt = performance.now();
+          this.shake = Math.min(1, this.shake + 0.5);
+        }
+      }
+      if (ev.k === "boom") {
+        const d = Math.hypot(ev.x - snap.ship.x, ev.y - snap.ship.y);
+        if (d < 1500) this.shake = Math.min(1.5, this.shake + (ev.big ? 1.2 : 0.6) * (1 - d / 1500));
+      }
+    }
     const seen = new Set<number>();
     for (const e of snap.entities) {
       seen.add(e.id);
@@ -212,7 +268,7 @@ export class Scene3D {
         t.prev = t.curr;
         t.curr = { x: e.x, y: e.y, heading: e.heading };
         // Si Ciencia lo acaba de escanear, reconstruir el mesh con su color real
-        if (e.kind === "cpu" && t.scanned !== e.scanned) {
+        if (e.kind === "cpu" && (t.scanned !== e.scanned)) {
           this.scene.remove(t.group);
           t.group = this.buildMesh(e);
           this.scene.add(t.group);
@@ -289,6 +345,9 @@ export class Scene3D {
       return g;
     }
     if (e.kind === "cpu" && e.scanned === false) return makeShipMesh(0x667788, 0x99aabb);
+    const tn = e.typeName ?? "";
+    if (tn.includes("Flavia")) return makeFreighterMesh();
+    if (tn.includes("Adder")) return makeInterceptorMesh(0x995544, 0xff7744);
     return makeShipMesh(0x884444, 0xff5533);
   }
 
@@ -305,14 +364,46 @@ export class Scene3D {
         t.group.rotation.y += 0.0011;
       }
     }
+    // Minas: parpadeo
+    const tNow = performance.now() / 1000;
+    for (const t of this.tracked.values()) {
+      if (t.kind === "mine") {
+        const m = t.group.children[0] as THREE.Mesh | undefined;
+        const mat = m?.material as THREE.MeshStandardMaterial | undefined;
+        if (mat) mat.emissiveIntensity = 0.5 + 1.5 * (0.5 + 0.5 * Math.sin(tNow * 5 + t.group.position.x));
+      }
+    }
     // Cámara de puente: sobre la nave, mirando hacia su rumbo
     if (this.selfShip) {
       const p = this.selfShip.group.position;
       const h = this.selfShip.group.rotation.y;
       const fwd = new THREE.Vector3(-Math.sin(h), 0, -Math.cos(h));
-      // three rotation.y = -heading → forward = (sin(heading),0,-cos(heading)) = (-sin(rot),0,-cos(rot))
-      this.camera.position.set(p.x - fwd.x * 18, p.y + 7, p.z - fwd.z * 18);
-      this.camera.lookAt(p.x + fwd.x * 120, p.y + 2, p.z + fwd.z * 120);
+      // Sensación de velocidad: FOV se abre con la velocidad (warp se nota de verdad)
+      const targetFov = 65 + Math.min(28, this.shipSpeed / 90);
+      this.camera.fov += (targetFov - this.camera.fov) * 0.08;
+      this.camera.updateProjectionMatrix();
+      // Sacudida al encajar daño
+      this.shake = Math.max(0, this.shake - 0.04);
+      const sx = (Math.random() - 0.5) * this.shake * 2.4;
+      const sy = (Math.random() - 0.5) * this.shake * 2.4;
+      this.camera.position.set(p.x - fwd.x * 18 + sx, p.y + 7 + sy, p.z - fwd.z * 18);
+      this.camera.lookAt(p.x + fwd.x * 120 + sx, p.y + 2 + sy, p.z + fwd.z * 120);
+      // Burbuja de escudo: flash translúcido tras un impacto reciente
+      const sinceFlash = performance.now() - this.shieldFlashAt;
+      if (sinceFlash < 350) {
+        if (!this.shieldBubble) {
+          this.shieldBubble = new THREE.Mesh(
+            new THREE.SphereGeometry(14, 24, 24),
+            new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.25, side: THREE.DoubleSide }),
+          );
+          this.scene.add(this.shieldBubble);
+        }
+        this.shieldBubble.visible = true;
+        this.shieldBubble.position.copy(p);
+        (this.shieldBubble.material as THREE.MeshBasicMaterial).opacity = 0.3 * (1 - sinceFlash / 350);
+      } else if (this.shieldBubble) {
+        this.shieldBubble.visible = false;
+      }
     }
     // Efectos transitorios
     const now = performance.now();
