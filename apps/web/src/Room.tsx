@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import type { RoomSnapshot, ServerMsg, Station } from "@bridge/shared";
+import type { GameSnap, RoomSnapshot, ServerMsg, Station } from "@bridge/shared";
 import { STATIONS, STATION_LABELS } from "@bridge/shared";
 import { useVoice } from "./useVoice.js";
+import { StationView } from "./StationView.js";
 
 interface ChatLine { fromName: string; text: string; ts: number }
 
@@ -9,6 +10,7 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [selfId, setSelfId] = useState("");
   const [chat, setChat] = useState<ChatLine[]>([]);
+  const [snap, setSnap] = useState<GameSnap | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
   const [status, setStatus] = useState<"connecting" | "connected" | "reconnecting">("connecting");
@@ -47,6 +49,9 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
           case "chat":
             setChat((c) => [...c.slice(-200), { fromName: msg.fromName, text: msg.text, ts: msg.ts }]);
             break;
+          case "snap":
+            setSnap(msg.snap);
+            break;
           case "error":
             setError(msg.message);
             break;
@@ -73,6 +78,7 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
 
   const me = room?.players.find((p) => p.id === selfId);
   const voice = useVoice(code, selfId, resumeKey);
+  const playing = room?.phase === "playing";
 
   function send(msg: object) {
     if (wsRef.current?.readyState === 1) wsRef.current.send(JSON.stringify(msg));
@@ -115,7 +121,22 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
         </span>
       </div>
 
-      <div className="stations">
+      {playing && (
+        <div style={{ marginBottom: "1rem" }}>
+          <StationView station={me?.station ?? null} snap={snap} send={send} />
+        </div>
+      )}
+
+      {!playing && me?.isHost && (
+        <div className="row" style={{ marginBottom: "1rem" }}>
+          <button onClick={() => send({ t: "startGame" })} style={{ fontSize: "1.1rem" }}>
+            ▶ Iniciar partida
+          </button>
+          <span className="muted">Cuando todos tengan puesto, despegamos.</span>
+        </div>
+      )}
+
+      <div className="stations" style={playing ? { gridTemplateColumns: "repeat(6, 1fr)", gap: "0.4rem" } : undefined}>
         {STATIONS.map((s) => {
           const holder = room?.players.find((p) => p.station === s);
           const mine = holder?.id === selfId;
@@ -125,9 +146,10 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
               key={s}
               className={`station${holder ? " taken" : ""}${mine ? " mine" : ""}${speaking ? " speaking" : ""}`}
               onClick={() => (!holder || mine) && toggleStation(s)}
+              style={playing ? { padding: "0.4rem 0.6rem" } : undefined}
             >
-              <h3>{STATION_LABELS[s]}</h3>
-              <p>{speaking ? "🔊 " : ""}{holder ? holder.name + (holder.connected ? "" : " (desconectado)") : "Libre"}</p>
+              <h3 style={playing ? { fontSize: "0.75rem", marginBottom: "0.1rem" } : undefined}>{STATION_LABELS[s]}</h3>
+              <p style={playing ? { fontSize: "0.7rem" } : undefined}>{speaking ? "🔊 " : ""}{holder ? holder.name + (holder.connected ? "" : " ⚠") : "Libre"}</p>
             </div>
           );
         })}

@@ -7,6 +7,8 @@ import type {
   Station,
 } from "@bridge/shared";
 import { MAX_CHAT_LENGTH, MAX_NAME_LENGTH, MAX_PLAYERS, STATIONS } from "@bridge/shared";
+import type { RoomPhase } from "@bridge/shared";
+import { createTestScenario, type World } from "@bridge/sim";
 
 const genCode = customAlphabet("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6);
 const genId = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 12);
@@ -28,9 +30,39 @@ export class Room {
   readonly code: string;
   readonly createdAt = Date.now();
   private players = new Map<string, Player>();
+  phase: RoomPhase = "lobby";
+  world: World | null = null;
+  private tickTimer: ReturnType<typeof setInterval> | null = null;
+  private snapCounter = 0;
 
   constructor(code: string) {
     this.code = code;
+  }
+
+  startGame(byPlayerId: string): boolean {
+    const p = this.players.get(byPlayerId);
+    if (!p?.isHost || this.phase !== "lobby") return false;
+    this.phase = "playing";
+    this.world = createTestScenario(Date.now() % 100000);
+    this.tickTimer = setInterval(() => this.tick(), 50);
+    this.broadcastRoom();
+    return true;
+  }
+
+  private tick(): void {
+    if (!this.world) return;
+    this.world.tick();
+    this.snapCounter++;
+    if (this.snapCounter % 2 === 0) {
+      const snap = this.world.snapshot();
+      this.broadcast({ t: "snap", snap });
+    }
+  }
+
+  stop(): void {
+    if (this.tickTimer) clearInterval(this.tickTimer);
+    this.tickTimer = null;
+    this.world = null;
   }
 
   get playerCount(): number {
@@ -47,6 +79,7 @@ export class Room {
     return {
       code: this.code,
       createdAt: this.createdAt,
+      phase: this.phase,
       players: [...this.players.values()].map(
         ({ id, name, station, isHost, connected }) => ({ id, name, station, isHost, connected }),
       ),
@@ -118,6 +151,22 @@ export class Room {
         this.broadcast({ t: "chat", from: player.id, fromName: player.name, text, ts: Date.now() });
         break;
       }
+      case "startGame":
+        if (!this.startGame(playerId)) {
+          player.outbox?.send({ t: "error", code: "cannot_start", message: "Solo el host puede iniciar la partida" });
+        }
+        break;
+      case "helm": {
+        if (player.station !== "helm") {
+          player.outbox?.send({ t: "error", code: "wrong_station", message: "No estás en Pilotaje" });
+          return;
+        }
+        const ship = this.world?.ship;
+        if (!ship) return;
+        if (msg.cmd === "setImpulse" && typeof msg.value === "number") ship.setImpulse(msg.value);
+        if (msg.cmd === "setHeading" && typeof msg.value === "number") ship.setTargetHeading(msg.value);
+        break;
+      }
     }
   }
 
@@ -141,7 +190,11 @@ export class Room {
       const first = [...this.players.values()][0];
       if (first) first.isHost = true;
     }
-    return this.players.size === 0;
+    if (this.players.size === 0) {
+      this.stop();
+      return true;
+    }
+    return false;
   }
 
   private broadcast(msg: ServerMsg): void {

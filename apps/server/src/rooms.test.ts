@@ -98,3 +98,43 @@ describe("Reconexión", () => {
     expect(room.resume("clave-falsa", fakeOutbox()).ok).toBe(false);
   });
 });
+
+describe("Partida", () => {
+  it("solo el host puede iniciar, y los snapshots llegan a todos", async () => {
+    const room = new RoomManager().create();
+    const b1 = fakeOutbox();
+    const b2 = fakeOutbox();
+    const r1 = room.join("Host", b1);
+    const r2 = room.join("Pil", b2);
+    if (!r1.ok || !r2.ok) throw new Error("join failed");
+
+    room.handleMessage(r2.id, { t: "startGame" });
+    expect(room.phase).toBe("lobby");
+    expect(b2.msgs.some((m) => m.t === "error" && m.code === "cannot_start")).toBe(true);
+
+    room.handleMessage(r1.id, { t: "startGame" });
+    expect(room.phase).toBe("playing");
+
+    await new Promise((r) => setTimeout(r, 250));
+    room.stop();
+    expect(b1.msgs.some((m) => m.t === "snap")).toBe(true);
+    expect(b2.msgs.some((m) => m.t === "snap")).toBe(true);
+  });
+
+  it("los comandos helm solo valen desde Pilotaje", async () => {
+    const room = new RoomManager().create();
+    const b1 = fakeOutbox();
+    const r1 = room.join("Host", b1);
+    if (!r1.ok) throw new Error("join failed");
+    room.handleMessage(r1.id, { t: "startGame" });
+
+    room.handleMessage(r1.id, { t: "helm", cmd: "setImpulse", value: 1 });
+    expect(b1.msgs.some((m) => m.t === "error" && m.code === "wrong_station")).toBe(true);
+    expect(room.world?.ship.impulse).toBe(0);
+
+    room.handleMessage(r1.id, { t: "takeStation", station: "helm" });
+    room.handleMessage(r1.id, { t: "helm", cmd: "setImpulse", value: 0.8 });
+    expect(room.world?.ship.impulse).toBe(0.8);
+    room.stop();
+  });
+});
