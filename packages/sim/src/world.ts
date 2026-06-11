@@ -36,6 +36,8 @@ const CPU_SPEC: ShipSpec = { maxSpeed: 90, turnRate: 8, accel: 20, hullMax: 70 }
 const PLAYER_BEAM = { range: 1500, arc: 100, cycle: 6, dmg: 9 };
 const CPU_BEAM = { range: 1300, cycle: 5, dmg: 6 };
 const TUBE_LOAD_TIME = 8;
+const SCAN_TIME = 6;
+const SCAN_RANGE = 12000;
 const MISSILE = { speed: 220, turnRate: 100, dmg: 35, life: 40, proximity: 80 };
 
 export abstract class Entity {
@@ -106,6 +108,8 @@ export class PlayerShip extends MovingShip {
   shieldFront = 100;
   shieldRear = 100;
   targetId: number | null = null;
+  scanTargetId: number | null = null;
+  scanProgress = 0;
   tubes: TubeSim[] = [
     { state: "empty", t: 0 },
     { state: "empty", t: 0 },
@@ -128,6 +132,18 @@ export class PlayerShip extends MovingShip {
   }
   setShields(up: boolean): void {
     this.shieldsUp = up;
+  }
+  startScan(id: number, world: World): boolean {
+    const target = world.get(id);
+    if (!target || !(target instanceof CpuShip) || target.scanned) return false;
+    if (dist(this, target) > SCAN_RANGE) return false;
+    this.scanTargetId = id;
+    this.scanProgress = 0;
+    return true;
+  }
+  cancelScan(): void {
+    this.scanTargetId = null;
+    this.scanProgress = 0;
   }
   loadTube(i: number): void {
     const tube = this.tubes[i];
@@ -191,6 +207,19 @@ export class PlayerShip extends MovingShip {
       }
     }
     if (this.targetId != null && !world.get(this.targetId)) this.targetId = null;
+    // Escaneo en curso
+    if (this.scanTargetId != null) {
+      const target = world.get(this.scanTargetId);
+      if (!target || !(target instanceof CpuShip) || dist(this, target) > SCAN_RANGE) {
+        this.cancelScan();
+      } else {
+        this.scanProgress += dt / SCAN_TIME;
+        if (this.scanProgress >= 1) {
+          target.scanned = true;
+          this.cancelScan();
+        }
+      }
+    }
   }
 
   takeDamage(dmg: number, fromBearing: number, world: World): boolean {
@@ -230,6 +259,9 @@ export class PlayerShip extends MovingShip {
       })),
       beamCooldown: this.beamCd / PLAYER_BEAM.cycle,
       ...this.engineering.snapshot(),
+      scan: this.scanTargetId != null
+        ? { targetId: this.scanTargetId, progress: Math.min(1, this.scanProgress) }
+        : null,
     };
   }
 
@@ -246,6 +278,7 @@ export class PlayerShip extends MovingShip {
 
 export class CpuShip extends MovingShip {
   callSign: string;
+  scanned = false;
   shield = 40;
   shieldMax = 40;
   private nextDecision = 0;
@@ -294,12 +327,17 @@ export class CpuShip extends MovingShip {
   }
 
   override state(): EntityState {
+    if (!this.scanned) {
+      // Sin escanear: contacto anónimo, sin facción ni estado
+      return { ...super.state(), scanned: false };
+    }
     return {
       ...super.state(),
       callSign: this.callSign,
       faction: "hostile",
       hullFrac: this.hull / this.spec.hullMax,
       shieldFrac: this.shield / this.shieldMax,
+      scanned: true,
     };
   }
 }

@@ -128,3 +128,35 @@ describe("Combate", () => {
     expect(w.playerDead).toBe(true);
   });
 });
+
+describe("Ciencia: escaneo", () => {
+  it("sin escanear, el contacto no revela nombre, facción ni estado", () => {
+    const w = new World(3);
+    w.addCpuShip(1000, 1000, "KR-S");
+    const e = w.snapshot().entities.find((x) => x.kind === "cpu")!;
+    expect(e.scanned).toBe(false);
+    expect(e.callSign).toBeUndefined();
+    expect(e.faction).toBeUndefined();
+    expect(e.hullFrac).toBeUndefined();
+  });
+
+  it("el escaneo tarda 6 s y revela todo", () => {
+    const w = new World(3);
+    const c = w.addCpuShip(1000, 1000, "KR-S");
+    expect(w.ship.startScan(c.id, w)).toBe(true);
+    for (let i = 0; i < 20 * 3; i++) w.tick();
+    expect(w.snapshot().ship.scan?.progress).toBeGreaterThan(0.4);
+    for (let i = 0; i < 20 * 4; i++) w.tick();
+    const e = w.snapshot().entities.find((x) => x.kind === "cpu")!;
+    expect(e.scanned).toBe(true);
+    expect(e.callSign).toBe("KR-S");
+    expect(e.faction).toBe("hostile");
+    expect(e.hullFrac).toBeDefined();
+  });
+
+  it("fuera de alcance no se puede escanear", () => {
+    const w = new World(3);
+    const c = w.addCpuShip(0, 20000, "KR-F");
+    expect(w.ship.startScan(c.id, w)).toBe(false);
+  });
+});

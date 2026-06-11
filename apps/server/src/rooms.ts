@@ -207,6 +207,21 @@ export class Room {
         }
         break;
       }
+      case "science": {
+        if (!player.stations.includes("science")) {
+          player.outbox?.send({ t: "error", code: "wrong_station", message: "No estás en Ciencia" });
+          return;
+        }
+        const ship = this.world?.ship;
+        if (!ship || !this.world) return;
+        if (msg.cmd === "scan" && typeof msg.id === "number") {
+          if (!ship.startScan(msg.id, this.world)) {
+            player.outbox?.send({ t: "error", code: "scan_failed", message: "Fuera de alcance o ya escaneado" });
+          }
+        }
+        if (msg.cmd === "cancelScan") ship.cancelScan();
+        break;
+      }
       case "weapons": {
         if (!player.stations.includes("weapons")) {
           player.outbox?.send({ t: "error", code: "wrong_station", message: "No estás en Armamento" });

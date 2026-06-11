@@ -233,3 +233,22 @@ describe("Ingeniería", () => {
     room.stop();
   });
 });
+
+describe("Ciencia", () => {
+  it("escanear solo desde Ciencia, y el escaneo arranca", () => {
+    const room = new RoomManager().create();
+    const b = fakeOutbox();
+    const r = room.join("Sci", b);
+    if (!r.ok) throw new Error("join failed");
+    room.handleMessage(r.id, { t: "startGame" });
+    const cpu = room.world!.snapshot().entities.find((e) => e.kind === "cpu")!;
+
+    room.handleMessage(r.id, { t: "science", cmd: "scan", id: cpu.id });
+    expect(b.msgs.some((m) => m.t === "error" && m.code === "wrong_station")).toBe(true);
+
+    room.handleMessage(r.id, { t: "takeStation", station: "science" });
+    room.handleMessage(r.id, { t: "science", cmd: "scan", id: cpu.id });
+    expect(room.world!.ship.scanTargetId).toBe(cpu.id);
+    room.stop();
+  });
+});

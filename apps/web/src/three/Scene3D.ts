@@ -19,6 +19,7 @@ interface Tracked {
   prev: { x: number; y: number; heading: number };
   curr: { x: number; y: number; heading: number };
   kind: string;
+  scanned?: boolean;
 }
 
 function makeNebulaTexture(hue: number): THREE.Texture {
@@ -202,6 +203,7 @@ export class Scene3D {
           prev: { x: e.x, y: e.y, heading: e.heading },
           curr: { x: e.x, y: e.y, heading: e.heading },
           kind: e.kind,
+          scanned: e.scanned,
         };
         this.tracked.set(e.id, t);
         this.scene.add(t.group);
@@ -209,6 +211,13 @@ export class Scene3D {
       } else {
         t.prev = t.curr;
         t.curr = { x: e.x, y: e.y, heading: e.heading };
+        // Si Ciencia lo acaba de escanear, reconstruir el mesh con su color real
+        if (e.kind === "cpu" && t.scanned !== e.scanned) {
+          this.scene.remove(t.group);
+          t.group = this.buildMesh(e);
+          this.scene.add(t.group);
+          t.scanned = e.scanned;
+        }
       }
     }
     for (const [id, t] of this.tracked) {
@@ -231,6 +240,7 @@ export class Scene3D {
       g.add(m);
       return g;
     }
+    if (e.kind === "cpu" && e.scanned === false) return makeShipMesh(0x667788, 0x99aabb);
     return makeShipMesh(0x884444, 0xff5533);
   }
 

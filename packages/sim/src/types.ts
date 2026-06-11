@@ -10,6 +10,7 @@ export interface EntityState {
   faction?: "friendly" | "neutral" | "hostile";
   hullFrac?: number;
   shieldFrac?: number;
+  scanned?: boolean;
 }
 
 export type TubeStateSim = "empty" | "loading" | "loaded";
@@ -41,6 +42,7 @@ export interface PlayerShipState {
   energyMax: number;
   repairing: SystemName | null;
   systems: Record<SystemName, SystemState>;
+  scan: { targetId: number; progress: number } | null;
 }
 
 export type SimEvent =

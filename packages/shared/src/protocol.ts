@@ -47,6 +47,7 @@ export interface SnapEntity {
   faction?: "friendly" | "neutral" | "hostile";
   hullFrac?: number;
   shieldFrac?: number;
+  scanned?: boolean;
 }
 
 export const SHIP_SYSTEMS = ["reactor", "beams", "missiles", "maneuver", "impulse", "shields"] as const;
@@ -95,6 +96,7 @@ export interface SnapShip {
   energyMax: number;
   systems: Record<ShipSystem, SnapSystem>;
   repairing: ShipSystem | null;
+  scan: { targetId: number; progress: number } | null;
 }
 
 export type SnapEvent =
@@ -124,7 +126,9 @@ export type ClientMsg =
   | { t: "weapons"; cmd: "shields"; up: boolean }
   | { t: "engineering"; cmd: "setPower"; system: ShipSystem; value: number }
   | { t: "engineering"; cmd: "setCoolant"; system: ShipSystem; value: number }
-  | { t: "engineering"; cmd: "repair"; system: ShipSystem | null };
+  | { t: "engineering"; cmd: "repair"; system: ShipSystem | null }
+  | { t: "science"; cmd: "scan"; id: number }
+  | { t: "science"; cmd: "cancelScan" };
 
 /** Mensajes servidor → cliente */
 export type ServerMsg =

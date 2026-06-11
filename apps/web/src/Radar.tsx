@@ -106,7 +106,13 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, targetI
         ctx.save();
         ctx.translate(sx, sy);
         ctx.rotate((e.heading * Math.PI) / 180);
-        ctx.fillStyle = isSelf ? "#38bdf8" : e.faction === "hostile" ? "#f87171" : "#a3e635";
+        ctx.fillStyle = isSelf
+          ? "#38bdf8"
+          : e.scanned === false
+            ? "#94a3b8"
+            : e.faction === "hostile"
+              ? "#f87171"
+              : "#a3e635";
         ctx.beginPath();
         ctx.moveTo(0, -7);
         ctx.lineTo(5, 6);
@@ -114,10 +120,10 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, targetI
         ctx.closePath();
         ctx.fill();
         ctx.restore();
-        if (e.callSign && !isSelf) {
+        if (!isSelf) {
           ctx.fillStyle = "rgba(203,213,225,0.7)";
           ctx.font = "10px monospace";
-          ctx.fillText(e.callSign, sx + 8, sy + 3);
+          ctx.fillText(e.callSign ?? "??", sx + 8, sy + 3);
         }
       }
     }

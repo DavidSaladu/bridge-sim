@@ -21,6 +21,8 @@ export function StationView({ station, snap, send, events }: Props) {
       return <WeaponsView snap={snap} send={send} events={events} />;
     case "engineering":
       return <EngineeringView snap={snap} send={send} />;
+    case "science":
+      return <ScienceView snap={snap} send={send} events={events} />;
     case "captain":
       return <CaptainView snap={snap} events={events} />;
     default:
@@ -50,11 +52,15 @@ function WeaponsView({ snap, send, events }: { snap: GameSnap; send: (m: object)
           <div style={{ marginBottom: "0.75rem" }}>
             <b style={{ color: "#facc15" }}>Blanco:</b>{" "}
             {target ? (
-              <>
-                {target.callSign}
-                <Bar label="Casco" frac={target.hullFrac ?? 1} color="#f87171" />
-                <Bar label="Escudo" frac={target.shieldFrac ?? 0} color="#38bdf8" />
-              </>
+              target.scanned ? (
+                <>
+                  {target.callSign}
+                  <Bar label="Casco" frac={target.hullFrac ?? 1} color="#f87171" />
+                  <Bar label="Escudo" frac={target.shieldFrac ?? 0} color="#38bdf8" />
+                </>
+              ) : (
+                <span className="muted">contacto sin escanear — pide datos a Ciencia</span>
+              )
             ) : (
               <span className="muted">ninguno</span>
             )}
@@ -104,6 +110,69 @@ function WeaponsView({ snap, send, events }: { snap: GameSnap; send: (m: object)
             <Bar label={`Proa ${ship.shieldFront}`} frac={ship.shieldFront / ship.shieldMax} color="#38bdf8" />
             <Bar label={`Popa ${ship.shieldRear}`} frac={ship.shieldRear / ship.shieldMax} color="#38bdf8" />
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScienceView({ snap, send, events }: { snap: GameSnap; send: (m: object) => void; events: TimedEvent[] }) {
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const { ship } = snap;
+  const sel = snap.entities.find((e) => e.id === selectedId);
+  const scanning = ship.scan;
+  const distOf = (e: { x: number; y: number }) => Math.hypot(e.x - ship.x, e.y - ship.y);
+  const bearingOf = (e: { x: number; y: number }) =>
+    Math.round(((Math.atan2(e.x - ship.x, e.y - ship.y) * 180) / Math.PI + 360) % 360);
+
+  return (
+    <div className="row" style={{ alignItems: "flex-start", gap: "1.5rem" }}>
+      <Radar
+        snap={snap}
+        range={15000}
+        size={480}
+        events={events}
+        targetId={selectedId}
+        onSelectEntity={(id) => setSelectedId(id)}
+      />
+      <div style={{ minWidth: 260, flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        <Viewport3D snap={snap} height={150} />
+        <div className="panel">
+          <h3 style={{ marginTop: 0, color: "var(--accent)" }}>Ciencia</h3>
+          <p className="muted" style={{ marginTop: 0 }}>Radar de largo alcance (15 km). Selecciona un contacto.</p>
+          {sel ? (
+            <div style={{ fontSize: "0.9rem" }}>
+              <p style={{ margin: "0.25rem 0" }}>
+                <b style={{ color: "#facc15" }}>{sel.callSign ?? "Contacto desconocido"}</b>{" "}
+                {sel.scanned === false && <span className="muted">(sin escanear)</span>}
+              </p>
+              <p className="muted" style={{ margin: "0.25rem 0" }}>
+                Distancia {(distOf(sel) / 1000).toFixed(1)} km · Marcación {bearingOf(sel)}°
+              </p>
+              {sel.scanned ? (
+                <>
+                  <p style={{ margin: "0.25rem 0" }}>
+                    Facción: <b style={{ color: sel.faction === "hostile" ? "#f87171" : "#a3e635" }}>
+                      {sel.faction === "hostile" ? "HOSTIL" : "neutral"}
+                    </b>
+                  </p>
+                  <Bar label={`Casco ${Math.round((sel.hullFrac ?? 0) * 100)}%`} frac={sel.hullFrac ?? 0} color="#f87171" />
+                  <Bar label={`Escudos ${Math.round((sel.shieldFrac ?? 0) * 100)}%`} frac={sel.shieldFrac ?? 0} color="#38bdf8" />
+                </>
+              ) : scanning?.targetId === sel.id ? (
+                <Bar label={`Escaneando… ${Math.round(scanning.progress * 100)}%`} frac={scanning.progress} color="#facc15" />
+              ) : (
+                <button
+                  style={{ marginTop: "0.4rem" }}
+                  onClick={() => send({ t: "science", cmd: "scan", id: sel.id })}
+                >
+                  🛰 Escanear (6 s)
+                </button>
+              )}
+            </div>
+          ) : (
+            <p className="muted">Ningún contacto seleccionado.</p>
+          )}
         </div>
       </div>
     </div>
