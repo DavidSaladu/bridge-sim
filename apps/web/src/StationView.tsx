@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Viewport3D } from "./Viewport3D.js";
 import type { GameSnap, Station } from "@bridge/shared";
 import { STATION_LABELS } from "@bridge/shared";
 import { Radar } from "./Radar.js";
@@ -38,7 +39,9 @@ function HelmView({ snap, send }: { snap: GameSnap; send: (m: object) => void })
         size={420}
         onSetHeading={(deg) => send({ t: "helm", cmd: "setHeading", value: deg })}
       />
-      <div className="panel" style={{ minWidth: 240, flex: 1 }}>
+      <div style={{ minWidth: 260, flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+      <Viewport3D snap={snap} height={170} />
+      <div className="panel">
         <h3 style={{ marginTop: 0, color: "var(--accent)" }}>Pilotaje</h3>
         <p className="muted">Pulsa en el radar para fijar rumbo</p>
         <table style={{ width: "100%", fontSize: "0.95rem" }}>
@@ -68,17 +71,37 @@ function HelmView({ snap, send }: { snap: GameSnap; send: (m: object) => void })
           </div>
         </div>
       </div>
+      </div>
     </div>
   );
 }
 
 function CaptainView({ snap }: { snap: GameSnap }) {
+  const [view, setView] = useState<"3d" | "tactical">("3d");
   const { ship } = snap;
   return (
     <div>
-      <div className="row" style={{ justifyContent: "center" }}>
-        <Radar snap={snap} range={12000} size={560} />
+      <div className="row" style={{ justifyContent: "center", marginBottom: "0.5rem" }}>
+        <button
+          onClick={() => setView("3d")}
+          style={view === "3d" ? { background: "var(--accent)", color: "#082f49" } : undefined}
+        >
+          Vista exterior
+        </button>
+        <button
+          onClick={() => setView("tactical")}
+          style={view === "tactical" ? { background: "var(--accent)", color: "#082f49" } : undefined}
+        >
+          Táctico
+        </button>
       </div>
+      {view === "3d" ? (
+        <Viewport3D snap={snap} height={460} collapsible={false} />
+      ) : (
+        <div className="row" style={{ justifyContent: "center" }}>
+          <Radar snap={snap} range={12000} size={560} />
+        </div>
+      )}
       <div className="row" style={{ justifyContent: "center", gap: "2rem", marginTop: "0.5rem" }}>
         <span className="muted">Rumbo {Math.round(ship.heading)}°</span>
         <span className="muted">{Math.round(ship.speed)} m/s</span>
@@ -92,7 +115,9 @@ function GenericView({ station, snap }: { station: Station | null; snap: GameSna
   return (
     <div className="row" style={{ alignItems: "flex-start", gap: "1.5rem" }}>
       <Radar snap={snap} range={8000} size={320} />
-      <div className="panel" style={{ flex: 1 }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+      <Viewport3D snap={snap} height={170} />
+      <div className="panel">
         <h3 style={{ marginTop: 0, color: "var(--accent)" }}>
           {station ? STATION_LABELS[station] : "Sin puesto"}
         </h3>
@@ -101,6 +126,7 @@ function GenericView({ station, snap }: { station: Station | null; snap: GameSna
             ? "Esta consola se activará en la próxima fase. De momento tienes el radar de situación."
             : "Elige un puesto libre para operar una consola."}
         </p>
+      </div>
       </div>
     </div>
   );
