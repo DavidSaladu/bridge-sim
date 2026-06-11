@@ -46,7 +46,7 @@ export interface RoomSnapshot {
 /** Entidad tal y como viaja en un snapshot de partida. */
 export interface SnapEntity {
   id: number;
-  kind: "player" | "cpu" | "asteroid" | "station" | "missile" | "nebula" | "mine";
+  kind: "player" | "cpu" | "asteroid" | "station" | "missile" | "nebula" | "mine" | "probe";
   x: number;
   y: number;
   heading: number;
@@ -125,6 +125,9 @@ export interface SnapShip {
   hasJump: boolean;
   jump: { charge: number; cooldown: number; distance: number } | null;
   ammo: Record<MissileType, number>;
+  beam: { range: number; arc: number } | null;
+  probes: number;
+  scanSignal: [number, number] | null;
 }
 
 export type SnapEvent =
@@ -163,6 +166,7 @@ export type ClientMsg =
   | { t: "helm"; cmd: "abortJump" }
   | { t: "weapons"; cmd: "setTarget"; id: number | null }
   | { t: "weapons"; cmd: "loadTube"; tube: number; missile: MissileType }
+  | { t: "weapons"; cmd: "unloadTube"; tube: number }
   | { t: "weapons"; cmd: "fireTube"; tube: number }
   | { t: "weapons"; cmd: "shields"; up: boolean }
   | { t: "engineering"; cmd: "setPower"; system: ShipSystem; value: number }
@@ -170,11 +174,13 @@ export type ClientMsg =
   | { t: "engineering"; cmd: "repair"; system: ShipSystem | null }
   | { t: "science"; cmd: "scan"; id: number }
   | { t: "science"; cmd: "cancelScan" }
+  | { t: "science"; cmd: "scanTune"; a: number; b: number }
   | { t: "comms"; cmd: "addWaypoint"; x: number; y: number }
   | { t: "comms"; cmd: "removeWaypoint"; id: number }
   | { t: "comms"; cmd: "hail"; id: number }
   | { t: "comms"; cmd: "choose"; index: number }
   | { t: "comms"; cmd: "closeChannel" }
+  | { t: "comms"; cmd: "launchProbe"; x: number; y: number }
   | { t: "selectScenario"; id: string }
   | { t: "uploadScenario"; name: string; source: string };
 

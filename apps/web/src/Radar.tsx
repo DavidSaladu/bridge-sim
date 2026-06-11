@@ -15,9 +15,10 @@ interface Props {
   onClickWorld?: (x: number, y: number) => void;
   targetId?: number | null;
   events?: TimedEvent[];
+  showBeamArc?: boolean;
 }
 
-export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClickWorld, targetId, events }: Props) {
+export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClickWorld, targetId, events, showBeamArc }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -147,6 +148,17 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
           ctx.font = "10px monospace";
           ctx.fillText(e.callSign, sx + 8, sy + 3);
         }
+      } else if (e.kind === "probe") {
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(Math.PI / 4);
+        ctx.fillStyle = "#22d3ee";
+        ctx.fillRect(-3, -3, 6, 6);
+        ctx.restore();
+        ctx.strokeStyle = "rgba(34, 211, 238, 0.25)";
+        ctx.beginPath();
+        ctx.arc(sx, sy, 5000 * scale > c ? 12 : 5000 * scale, 0, Math.PI * 2);
+        ctx.stroke();
       } else if (e.kind === "mine") {
         ctx.fillStyle = "#fb7185";
         ctx.beginPath();
@@ -192,6 +204,21 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
           ctx.fillText(e.callSign ?? "??", sx + 8, sy + 3);
         }
       }
+    }
+
+    // Arco de rayos (cuña alrededor del rumbo actual)
+    if (showBeamArc && ship.beam) {
+      const r = Math.min(c - 2, ship.beam.range * scale);
+      const a0 = ((ship.heading - ship.beam.arc / 2) * Math.PI) / 180 - Math.PI / 2;
+      const a1 = ((ship.heading + ship.beam.arc / 2) * Math.PI) / 180 - Math.PI / 2;
+      ctx.fillStyle = "rgba(56, 189, 248, 0.07)";
+      ctx.strokeStyle = "rgba(56, 189, 248, 0.35)";
+      ctx.beginPath();
+      ctx.moveTo(c, c);
+      ctx.arc(c, c, r, a0, a1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
     }
 
     // Waypoints: rombos amarillos numerados; si caen fuera, marcador en el borde

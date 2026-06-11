@@ -122,6 +122,35 @@ export class Nebula extends Entity {
   }
 }
 
+export class Probe extends Entity {
+  static SPEED = 600;
+  static LIFETIME = 600; // 10 min
+  private life = Probe.LIFETIME;
+  arrived = false;
+  constructor(id: number, x: number, y: number, public tx: number, public ty: number) {
+    super(id, "probe", x, y);
+  }
+  update(dt: number, _world: World): void {
+    this.life -= dt;
+    if (this.life <= 0) {
+      this.dead = true;
+      return;
+    }
+    if (!this.arrived) {
+      const d = Math.hypot(this.tx - this.x, this.ty - this.y);
+      if (d < Probe.SPEED * dt) {
+        this.x = this.tx;
+        this.y = this.ty;
+        this.arrived = true;
+      } else {
+        this.x += ((this.tx - this.x) / d) * Probe.SPEED * dt;
+        this.y += ((this.ty - this.y) / d) * Probe.SPEED * dt;
+        this.heading = bearing(this, { x: this.tx, y: this.ty });
+      }
+    }
+  }
+}
+
 export class Mine extends Entity {
   constructor(id: number, x: number, y: number) {
     super(id, "mine", x, y);
@@ -186,12 +215,15 @@ export class PlayerShip extends MovingShip {
   dockedTo: number | null = null;
   scanTargetId: number | null = null;
   scanProgress = 0;
+  scanBands: [number, number] = [50, 50];
+  scanTune: [number, number] = [50, 50];
   warp = 0;
   ammo: { homing: number; nuke: number; emp: number };
   jumpCharge = 0;        // 0..1 cuando se está cargando
   jumpCharging = false;
   jumpDistance = 10000;
   jumpCooldown = 0;
+  probes = 8;
   private restockTimer = 0;
   tubes: TubeSim[];
   beamCd = 0;
@@ -245,7 +277,7 @@ export class PlayerShip extends MovingShip {
   }
 
   setImpulse(v: number): void {
-    this.impulse = Math.max(0, Math.min(1, v));
+    this.impulse = Math.max(-0.5, Math.min(1, v));
   }
   setTargetHeading(deg: number): void {
     this.targetHeading = norm(deg);
@@ -286,7 +318,13 @@ export class PlayerShip extends MovingShip {
     if (dist(this, target) > SCAN_RANGE) return false;
     this.scanTargetId = id;
     this.scanProgress = 0;
+    this.scanBands = [10 + world.rng() * 80, 10 + world.rng() * 80];
+    this.scanTune = [50, 50];
     return true;
+  }
+
+  setScanTune(a: number, b: number): void {
+    this.scanTune = [Math.max(0, Math.min(100, a)), Math.max(0, Math.min(100, b))];
   }
   cancelScan(): void {
     this.scanTargetId = null;
@@ -301,6 +339,15 @@ export class PlayerShip extends MovingShip {
       tube.missile = missile;
     }
   }
+  unloadTube(i: number): void {
+    const tube = this.tubes[i];
+    if (!tube || tube.state === "empty" || !tube.missile) return;
+    this.ammo[tube.missile]++;
+    tube.state = "empty";
+    tube.t = 0;
+    tube.missile = null;
+  }
+
   fireTube(i: number, world: World): void {
     const tube = this.tubes[i];
     if (!tube || tube.state !== "loaded" || this.targetId == null || !tube.missile) return;
@@ -329,6 +376,7 @@ export class PlayerShip extends MovingShip {
         for (const k of ["homing", "nuke", "emp"] as const) {
           if (this.ammo[k] < maxAmmo[k]) this.ammo[k]++;
         }
+        if (this.probes < 8) this.probes++;
       }
       for (const name of Object.keys(this.engineering.systems) as (keyof typeof this.engineering.systems)[]) {
         const sys = this.engineering.systems[name];
@@ -407,7 +455,14 @@ export class PlayerShip extends MovingShip {
       if (!target || !(target instanceof CpuShip) || dist(this, target) > SCAN_RANGE) {
         this.cancelScan();
       } else {
-        this.scanProgress += dt / SCAN_TIME;
+        // Minijuego: el progreso avanza con las dos bandas bien sintonizadas y decae si no
+        const close0 = Math.abs(this.scanTune[0] - this.scanBands[0]) <= 8;
+        const close1 = Math.abs(this.scanTune[1] - this.scanBands[1]) <= 8;
+        if (close0 && close1) {
+          this.scanProgress += dt / 2.5;
+        } else {
+          this.scanProgress = Math.max(0, this.scanProgress - dt / 5);
+        }
         if (this.scanProgress >= 1) {
           target.scanned = true;
           this.cancelScan();
@@ -466,6 +521,14 @@ export class PlayerShip extends MovingShip {
       scan: this.scanTargetId != null
         ? { targetId: this.scanTargetId, progress: Math.min(1, this.scanProgress) }
         : null,
+      scanSignal: this.scanTargetId != null
+        ? [
+            Math.max(0, 1 - Math.abs(this.scanTune[0] - this.scanBands[0]) / 50),
+            Math.max(0, 1 - Math.abs(this.scanTune[1] - this.scanBands[1]) / 50),
+          ]
+        : null,
+      beam: this.template.beam ? { range: this.template.beam.range, arc: this.template.beam.arc } : null,
+      probes: this.probes,
       docked: this.dockedTo != null,
       canDock: this.dockedTo == null && this.speed <= DOCK_MAX_SPEED && this.nearestDockable(world) != null,
       warp: this.warp,
@@ -720,6 +783,14 @@ export class World {
     return n;
   }
 
+  launchProbe(from: PlayerShip, tx: number, ty: number): Probe | null {
+    if (from.probes <= 0) return null;
+    from.probes--;
+    const p = new Probe(this.allocId(), from.x, from.y, tx, ty);
+    this.entities.set(p.id, p);
+    return p;
+  }
+
   addMine(x: number, y: number): Mine {
     const m = new Mine(this.allocId(), x, y);
     this.entities.set(m.id, m);
@@ -767,12 +838,21 @@ export class World {
     return false;
   }
 
+  /** ¿Hay cobertura de sensores cerca (nave o sondas)? */
+  private sensorCoverage(viewer: PlayerShip, e: Entity): boolean {
+    if (dist(viewer, e) <= NEBULA_SIGHT) return true;
+    for (const p of this.entities.values()) {
+      if (p instanceof Probe && !p.dead && dist(p, e) <= NEBULA_SIGHT) return true;
+    }
+    return false;
+  }
+
   /** Visibilidad desde la nave del jugador (niebla de guerra servida desde el servidor). */
   private visibleTo(viewer: PlayerShip, e: Entity): boolean {
     if (e === viewer) return true;
-    if (e.kind === "mine") return dist(viewer, e) <= NEBULA_SIGHT;
+    if (e.kind === "mine") return this.sensorCoverage(viewer, e);
     if (e instanceof MovingShip || e.kind === "missile") {
-      if (this.inNebula(e) && dist(viewer, e) > NEBULA_SIGHT) return false;
+      if (this.inNebula(e) && !this.sensorCoverage(viewer, e)) return false;
     }
     return true;
   }

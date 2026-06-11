@@ -50,6 +50,7 @@ function WeaponsView({ snap, send, events }: { snap: GameSnap; send: (m: object)
         size={420}
         targetId={ship.targetId}
         events={events}
+        showBeamArc
         onSelectEntity={(id) => send({ t: "weapons", cmd: "setTarget", id })}
       />
       <div style={{ minWidth: 280, flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
@@ -108,13 +109,22 @@ function WeaponsView({ snap, send, events }: { snap: GameSnap; send: (m: object)
                   <span className="muted">cargando {tube.missile && MISSILE_LABELS[tube.missile]} {Math.round(tube.progress * 100)}%</span>
                 )}
                 {tube.state === "loaded" && (
-                  <button
-                    style={{ padding: "0.2rem 0.6rem", borderColor: "#f87171", background: "#7f1d1d" }}
-                    onClick={() => send({ t: "weapons", cmd: "fireTube", tube: i })}
-                    disabled={!target}
-                  >
-                    ¡Disparar {tube.missile && MISSILE_LABELS[tube.missile]}!
-                  </button>
+                  <>
+                    <button
+                      style={{ padding: "0.2rem 0.6rem", borderColor: "#f87171", background: "#7f1d1d" }}
+                      onClick={() => send({ t: "weapons", cmd: "fireTube", tube: i })}
+                      disabled={!target}
+                    >
+                      ¡Disparar {tube.missile && MISSILE_LABELS[tube.missile]}!
+                    </button>
+                    <button
+                      style={{ padding: "0.15rem 0.4rem", fontSize: "0.75rem" }}
+                      onClick={() => send({ t: "weapons", cmd: "unloadTube", tube: i })}
+                      title="Descargar y devolver al almacén"
+                    >
+                      ⏏
+                    </button>
+                  </>
                 )}
               </div>
             ))}
@@ -138,7 +148,7 @@ function WeaponsView({ snap, send, events }: { snap: GameSnap; send: (m: object)
 }
 
 function CommsView({ snap, send, events, channel }: { snap: GameSnap; send: (m: object) => void; events: TimedEvent[]; channel: CommsChannel | null }) {
-  const [mode, setMode] = useState<"select" | "waypoint">("select");
+  const [mode, setMode] = useState<"select" | "waypoint" | "probe">("select");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const sel = snap.entities.find((e) => e.id === selectedId);
 
@@ -158,6 +168,12 @@ function CommsView({ snap, send, events, channel }: { snap: GameSnap; send: (m: 
           >
             📍 Poner waypoint
           </button>
+          <button
+            style={mode === "probe" ? { background: "var(--accent)", color: "#082f49" } : undefined}
+            onClick={() => setMode("probe")}
+          >
+            🛰 Lanzar sonda ({snap.ship.probes})
+          </button>
         </div>
         <Radar
           snap={snap}
@@ -166,7 +182,13 @@ function CommsView({ snap, send, events, channel }: { snap: GameSnap; send: (m: 
           events={events}
           targetId={selectedId}
           onSelectEntity={mode === "select" ? (id) => setSelectedId(id) : undefined}
-          onClickWorld={mode === "waypoint" ? (x, y) => send({ t: "comms", cmd: "addWaypoint", x, y }) : undefined}
+          onClickWorld={
+            mode === "waypoint"
+              ? (x, y) => send({ t: "comms", cmd: "addWaypoint", x, y })
+              : mode === "probe"
+                ? (x, y) => send({ t: "comms", cmd: "launchProbe", x, y })
+                : undefined
+          }
         />
       </div>
       <div style={{ minWidth: 280, flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
@@ -234,7 +256,15 @@ function CommsView({ snap, send, events, channel }: { snap: GameSnap; send: (m: 
 
 function ScienceView({ snap, send, events }: { snap: GameSnap; send: (m: object) => void; events: TimedEvent[] }) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [range, setRange] = useState(15000);
+  const [tune, setTune] = useState<[number, number]>([50, 50]);
   const { ship } = snap;
+
+  function applyTune(i: 0 | 1, v: number) {
+    const next: [number, number] = i === 0 ? [v, tune[1]] : [tune[0], v];
+    setTune(next);
+    send({ t: "science", cmd: "scanTune", a: next[0], b: next[1] });
+  }
   const sel = snap.entities.find((e) => e.id === selectedId);
   const scanning = ship.scan;
   const distOf = (e: { x: number; y: number }) => Math.hypot(e.x - ship.x, e.y - ship.y);
@@ -243,14 +273,27 @@ function ScienceView({ snap, send, events }: { snap: GameSnap; send: (m: object)
 
   return (
     <div className="row" style={{ alignItems: "flex-start", gap: "1.5rem" }}>
-      <Radar
-        snap={snap}
-        range={15000}
-        size={480}
-        events={events}
-        targetId={selectedId}
-        onSelectEntity={(id) => setSelectedId(id)}
-      />
+      <div>
+        <div className="row" style={{ marginBottom: "0.4rem" }}>
+          {[15000, 30000].map((r) => (
+            <button
+              key={r}
+              onClick={() => setRange(r)}
+              style={{ fontSize: "0.8rem", padding: "0.2rem 0.6rem", background: range === r ? "var(--accent)" : undefined, color: range === r ? "#082f49" : undefined }}
+            >
+              {r / 1000} km
+            </button>
+          ))}
+        </div>
+        <Radar
+          snap={snap}
+          range={range}
+          size={480}
+          events={events}
+          targetId={selectedId}
+          onSelectEntity={(id) => setSelectedId(id)}
+        />
+      </div>
       <div style={{ minWidth: 260, flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
         <Viewport3D snap={snap} height={150} />
         <div className="panel">
@@ -277,7 +320,26 @@ function ScienceView({ snap, send, events }: { snap: GameSnap; send: (m: object)
                   <Bar label={`Escudos ${Math.round((sel.shieldFrac ?? 0) * 100)}%`} frac={sel.shieldFrac ?? 0} color="#38bdf8" />
                 </>
               ) : scanning?.targetId === sel.id ? (
-                <Bar label={`Escaneando… ${Math.round(scanning.progress * 100)}%`} frac={scanning.progress} color="#facc15" />
+                <div>
+                  <Bar label={`Análisis ${Math.round(scanning.progress * 100)}%`} frac={scanning.progress} color="#facc15" />
+                  <p className="muted" style={{ fontSize: "0.78rem", margin: "0.4rem 0 0.2rem" }}>
+                    Sintoniza las dos bandas hasta maximizar la señal:
+                  </p>
+                  {([0, 1] as const).map((i) => (
+                    <div key={i}>
+                      <input
+                        type="range" min={0} max={100} value={tune[i]}
+                        onChange={(e) => applyTune(i, Number(e.target.value))}
+                        style={{ width: "100%" }}
+                      />
+                      <Bar
+                        label={`Señal ${i === 0 ? "α" : "β"} ${Math.round((ship.scanSignal?.[i] ?? 0) * 100)}%`}
+                        frac={ship.scanSignal?.[i] ?? 0}
+                        color={(ship.scanSignal?.[i] ?? 0) > 0.84 ? "#4ade80" : "#fb923c"}
+                      />
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <button
                   style={{ marginTop: "0.4rem" }}
@@ -406,6 +468,7 @@ function HelmView({ snap, send, events }: { snap: GameSnap; send: (m: object) =>
     setImpulse(v);
     send({ t: "helm", cmd: "setImpulse", value: v / 100 });
   }
+  const reverse = ship.impulse < 0;
 
   return (
     <div className="row" style={{ alignItems: "flex-start", gap: "1.5rem" }}>
@@ -425,22 +488,22 @@ function HelmView({ snap, send, events }: { snap: GameSnap; send: (m: object) =>
           <tbody>
             <tr><td className="muted">Rumbo</td><td style={{ textAlign: "right" }}>{Math.round(ship.heading)}°</td></tr>
             <tr><td className="muted">Rumbo objetivo</td><td style={{ textAlign: "right", color: "#facc15" }}>{Math.round(ship.targetHeading)}°</td></tr>
-            <tr><td className="muted">Velocidad</td><td style={{ textAlign: "right" }}>{Math.round(ship.speed)} m/s</td></tr>
+            <tr><td className="muted">Velocidad</td><td style={{ textAlign: "right", color: ship.speed < 0 ? "#f87171" : undefined }}>{Math.round(ship.speed)} m/s{ship.speed < 0 ? " (atrás)" : ""}</td></tr>
             <tr><td className="muted">Casco</td><td style={{ textAlign: "right" }}>{Math.round(ship.hull)}/{ship.hullMax}</td></tr>
           </tbody>
         </table>
         <div style={{ marginTop: "1rem" }}>
-          <label className="muted">Impulso: {impulse}%</label>
+          <label className="muted">Impulso: {impulse}%{impulse < 0 ? " (reversa)" : ""}</label>
           <input
             type="range"
-            min={0}
+            min={-50}
             max={100}
             value={impulse}
             onChange={(e) => applyImpulse(Number(e.target.value))}
-            style={{ width: "100%" }}
+            style={{ width: "100%", accentColor: reverse ? "#f87171" : undefined }}
           />
           <div className="row" style={{ marginTop: "0.5rem" }}>
-            {[0, 25, 50, 100].map((v) => (
+            {[-50, 0, 25, 50, 100].map((v) => (
               <button key={v} onClick={() => applyImpulse(v)} style={{ padding: "0.25rem 0.6rem", fontSize: "0.85rem" }}>
                 {v}%
               </button>
@@ -504,6 +567,7 @@ function HelmView({ snap, send, events }: { snap: GameSnap; send: (m: object) =>
 
 function CaptainView({ snap, events }: { snap: GameSnap; events: TimedEvent[] }) {
   const [view, setView] = useState<"3d" | "tactical">("3d");
+  const [range, setRange] = useState(12000);
   const { ship } = snap;
   return (
     <div>
@@ -524,8 +588,21 @@ function CaptainView({ snap, events }: { snap: GameSnap; events: TimedEvent[] })
       {view === "3d" ? (
         <Viewport3D snap={snap} height={460} collapsible={false} />
       ) : (
-        <div className="row" style={{ justifyContent: "center" }}>
-          <Radar snap={snap} range={12000} size={560} events={events} />
+        <div>
+          <div className="row" style={{ justifyContent: "center", marginBottom: "0.4rem" }}>
+            {[5000, 12000, 24000].map((r) => (
+              <button
+                key={r}
+                onClick={() => setRange(r)}
+                style={{ fontSize: "0.8rem", padding: "0.2rem 0.6rem", background: range === r ? "var(--accent)" : undefined, color: range === r ? "#082f49" : undefined }}
+              >
+                {r / 1000} km
+              </button>
+            ))}
+          </div>
+          <div className="row" style={{ justifyContent: "center" }}>
+            <Radar snap={snap} range={range} size={560} events={events} />
+          </div>
         </div>
       )}
       <div className="row" style={{ justifyContent: "center", gap: "2rem", marginTop: "0.5rem" }}>

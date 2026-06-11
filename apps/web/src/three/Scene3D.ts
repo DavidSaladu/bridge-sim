@@ -260,6 +260,15 @@ export class Scene3D {
       }
       return g;
     }
+    if (e.kind === "probe") {
+      const g = new THREE.Group();
+      const m = new THREE.Mesh(
+        new THREE.OctahedronGeometry(1.2, 0),
+        new THREE.MeshStandardMaterial({ color: 0x336677, emissive: 0x22d3ee, emissiveIntensity: 1.5 }),
+      );
+      g.add(m);
+      return g;
+    }
     if (e.kind === "mine") {
       const g = new THREE.Group();
       const m = new THREE.Mesh(

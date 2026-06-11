@@ -361,6 +361,9 @@ export class Room {
           }
         }
         if (msg.cmd === "cancelScan") ship.cancelScan();
+        if (msg.cmd === "scanTune" && typeof msg.a === "number" && typeof msg.b === "number") {
+          ship.setScanTune(msg.a, msg.b);
+        }
         break;
       }
       case "comms": {
@@ -401,6 +404,13 @@ export class Room {
             player.channelTargetId = null;
             player.outbox?.send({ t: "commsChannel", channel: null });
             break;
+          case "launchProbe":
+            if (typeof msg.x === "number" && typeof msg.y === "number") {
+              if (!world.launchProbe(world.ship, msg.x, msg.y)) {
+                player.outbox?.send({ t: "error", code: "no_probes", message: "Sin sondas. Atraca para reabastecer." });
+              }
+            }
+            break;
         }
         break;
       }
@@ -417,6 +427,9 @@ export class Room {
             break;
           case "loadTube":
             if (typeof msg.tube === "number") ship.loadTube(msg.tube, msg.missile ?? "homing");
+            break;
+          case "unloadTube":
+            if (typeof msg.tube === "number") ship.unloadTube(msg.tube);
             break;
           case "fireTube":
             if (typeof msg.tube === "number") ship.fireTube(msg.tube, this.world);

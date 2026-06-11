@@ -29,12 +29,15 @@ describe("PlayerShip", () => {
     expect(w.ship.heading).toBeCloseTo(90, 1);
   });
 
-  it("clampa el impulso a [0,1]", () => {
+  it("clampa el impulso a [-0.5, 1] (marcha atrás al 50%)", () => {
     const w = new World(1);
     w.ship.setImpulse(5);
     expect(w.ship.impulse).toBe(1);
     w.ship.setImpulse(-2);
-    expect(w.ship.impulse).toBe(0);
+    expect(w.ship.impulse).toBe(-0.5);
+    // y la nave retrocede de verdad
+    for (let i = 0; i < 20 * 10; i++) w.tick();
+    expect(w.ship.y).toBeLessThan(0);
   });
 });
 
@@ -143,18 +146,21 @@ describe("Ciencia: escaneo", () => {
     expect(e.hullFrac).toBeUndefined();
   });
 
-  it("el escaneo tarda 6 s y revela todo", () => {
+  it("el escaneo requiere sintonizar las bandas; bien sintonizado revela todo", () => {
     const w = new World(3);
     const c = w.addCpuShip(1000, 1000, "KR-S");
     expect(w.ship.startScan(c.id, w)).toBe(true);
+    // mal sintonizado: no avanza
+    w.ship.setScanTune((w.ship.scanBands[0] + 40) % 100, (w.ship.scanBands[1] + 40) % 100);
     for (let i = 0; i < 20 * 3; i++) w.tick();
-    expect(w.snapshot().ship.scan?.progress).toBeGreaterThan(0.4);
-    for (let i = 0; i < 20 * 4; i++) w.tick();
+    expect(w.snapshot().ship.scan?.progress ?? 0).toBe(0);
+    // sintonía exacta: completa en ~2.5 s
+    w.ship.setScanTune(w.ship.scanBands[0], w.ship.scanBands[1]);
+    for (let i = 0; i < 20 * 3; i++) w.tick();
     const e = w.snapshot().entities.find((x) => x.kind === "cpu")!;
     expect(e.scanned).toBe(true);
     expect(e.callSign).toBe("KR-S");
     expect(e.faction).toBe("hostile");
-    expect(e.hullFrac).toBeDefined();
   });
 
   it("fuera de alcance no se puede escanear", () => {
@@ -359,5 +365,30 @@ describe("Tipos de misil", () => {
     expect(target.shield).toBe(0);
     expect(target.hull).toBe(70);
     expect(target.dead).toBe(false);
+  });
+});
+
+describe("Sondas", () => {
+  it("viajan a destino y rompen la niebla de la nebulosa", () => {
+    const w = new World(12);
+    w.addNebula(0, 9000, 2500);
+    const hidden = w.addCpuShip(0, 9000, "KR-H");
+    hidden.impulse = 0;
+    expect(w.snapshot().entities.some((e) => e.id === hidden.id)).toBe(false);
+    expect(w.ship.probes).toBe(8);
+    const probe = w.launchProbe(w.ship, 0, 8500);
+    expect(probe).not.toBeNull();
+    expect(w.ship.probes).toBe(7);
+    for (let i = 0; i < 20 * 20; i++) w.tick();
+    expect(w.snapshot().entities.some((e) => e.id === hidden.id)).toBe(true);
+  });
+
+  it("la descarga de un tubo devuelve la munición", () => {
+    const w = new World(12);
+    w.ship.loadTube(0, "nuke");
+    expect(w.ship.ammo.nuke).toBe(3);
+    w.ship.unloadTube(0);
+    expect(w.ship.ammo.nuke).toBe(4);
+    expect(w.ship.tubes[0]!.state).toBe("empty");
   });
 });

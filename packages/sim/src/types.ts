@@ -1,4 +1,4 @@
-export type EntityKind = "player" | "cpu" | "asteroid" | "station" | "missile" | "nebula" | "mine";
+export type EntityKind = "player" | "cpu" | "asteroid" | "station" | "missile" | "nebula" | "mine" | "probe";
 
 export interface EntityState {
   id: number;
@@ -55,6 +55,9 @@ export interface PlayerShipState {
   hasJump: boolean;
   jump: { charge: number; cooldown: number; distance: number } | null;
   ammo: Record<MissileTypeSim, number>;
+  beam: { range: number; arc: number } | null;
+  probes: number;
+  scanSignal: [number, number] | null;
 }
 
 export type SimEvent =
