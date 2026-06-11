@@ -1,6 +1,8 @@
 import { Suspense, lazy, useRef, useState } from "react";
 import type { ScenarioInfo } from "@bridge/shared";
 import luaparse from "luaparse";
+import { ScenarioDesigner } from "./designer/ScenarioDesigner.js";
+import { generateLua, newObject, type DesignMeta, type DesignObject } from "./designer/model.js";
 
 const Monaco = lazy(() => import("@monaco-editor/react"));
 
@@ -61,6 +63,23 @@ export function ScenarioEditor({ scenarios, onUse, onClose, onPublished }: Props
   const [source, setSource] = useState(TEMPLATE);
   const [status, setStatus] = useState<ReturnType<typeof validate>>({ ok: true });
   const [publishState, setPublishState] = useState<"idle" | "saving" | "done" | "error">("idle");
+  const [tab, setTab] = useState<"visual" | "code">("visual");
+  const [objects, setObjects] = useState<DesignObject[]>(() => [newObject("playerStart", 0, 0)]);
+  const [meta, setMeta] = useState<DesignMeta>({ description: "", victory: "hostiles", surviveSeconds: 300 });
+  const [codeTouched, setCodeTouched] = useState(false);
+
+  function applyDesign(): string {
+    const lua = generateLua(name, meta, objects);
+    setSource(lua);
+    setStatus(validate(lua));
+    setCodeTouched(false);
+    return lua;
+  }
+
+  function currentSource(): string {
+    // En la pestaña visual, el diseño manda salvo que el código se haya tocado a mano después
+    return tab === "visual" && !codeTouched ? applyDesign() : source;
+  }
 
   async function publish() {
     setPublishState("saving");
@@ -68,7 +87,7 @@ export function ScenarioEditor({ scenarios, onUse, onClose, onPublished }: Props
       const res = await fetch("/api/scenarios", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, source }),
+        body: JSON.stringify({ name, source: currentSource() }),
       });
       if (!res.ok) throw new Error();
       setPublishState("done");
@@ -84,6 +103,7 @@ export function ScenarioEditor({ scenarios, onUse, onClose, onPublished }: Props
   function handleChange(value: string | undefined) {
     const src = value ?? "";
     setSource(src);
+    setCodeTouched(true);
     const res = validate(src);
     setStatus(res);
     const ref = monacoRef.current as {
@@ -114,7 +134,7 @@ export function ScenarioEditor({ scenarios, onUse, onClose, onPublished }: Props
   }
 
   function download() {
-    const blob = new Blob([source], { type: "text/x-lua" });
+    const blob = new Blob([currentSource()], { type: "text/x-lua" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = name.replace(/\s+/g, "-").toLowerCase() + ".lua";
@@ -129,6 +149,20 @@ export function ScenarioEditor({ scenarios, onUse, onClose, onPublished }: Props
     }}>
       <div className="row" style={{ marginBottom: "0.6rem" }}>
         <h2 style={{ margin: 0, color: "var(--accent)", fontWeight: 300, letterSpacing: "0.1em" }}>EDITOR DE ESCENARIOS</h2>
+        <div className="row" style={{ gap: 0 }}>
+          <button
+            style={{ borderRadius: "4px 0 0 4px", background: tab === "visual" ? "var(--accent)" : undefined, color: tab === "visual" ? "#082f49" : undefined }}
+            onClick={() => setTab("visual")}
+          >
+            🗺 Visual
+          </button>
+          <button
+            style={{ borderRadius: "0 4px 4px 0", background: tab === "code" ? "var(--accent)" : undefined, color: tab === "code" ? "#082f49" : undefined }}
+            onClick={() => { if (tab === "visual" && !codeTouched) applyDesign(); setTab("code"); }}
+          >
+            {"{ } Lua"}
+          </button>
+        </div>
         <input value={name} onChange={(e) => setName(e.target.value)} style={{ width: 220 }} placeholder="Nombre" />
         <select
           defaultValue=""
@@ -149,12 +183,15 @@ export function ScenarioEditor({ scenarios, onUse, onClose, onPublished }: Props
         <button
           disabled={!status.ok}
           style={{ background: status.ok ? "var(--accent)" : undefined, color: status.ok ? "#082f49" : undefined }}
-          onClick={() => onUse(name, source)}
+          onClick={() => onUse(name, currentSource())}
         >
           ✔ Usar en esta sala
         </button>
         <button onClick={onClose}>✕ Cerrar</button>
       </div>
+      {tab === "visual" ? (
+        <ScenarioDesigner objects={objects} setObjects={setObjects} meta={meta} setMeta={setMeta} />
+      ) : (
       <div style={{ flex: 1, display: "flex", gap: "0.75rem", minHeight: 0 }}>
         <div style={{ flex: 1, border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
           <Suspense fallback={<p className="muted" style={{ padding: "1rem" }}>Cargando editor…</p>}>
@@ -179,6 +216,7 @@ export function ScenarioEditor({ scenarios, onUse, onClose, onPublished }: Props
           ))}
         </div>
       </div>
+      )}
     </div>
   );
 }
