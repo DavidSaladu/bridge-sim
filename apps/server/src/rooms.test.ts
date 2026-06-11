@@ -315,3 +315,61 @@ describe("Atraque", () => {
     room.stop();
   });
 });
+
+describe("Escenarios Lua", () => {
+  it("la sala arranca con el escenario Clásico y el host puede cambiar a la biblioteca", () => {
+    const room = new RoomManager().create();
+    expect(room.snapshot().scenario.id).toBe("default");
+    const r = room.join("H", fakeOutbox());
+    if (!r.ok) throw new Error("join failed");
+    room.selectScenario(r.id, "emboscada");
+    expect(room.snapshot().scenario.id).toBe("emboscada");
+  });
+
+  it("el host puede subir un escenario propio y la partida lo ejecuta", async () => {
+    const room = new RoomManager().create();
+    const b = fakeOutbox();
+    const r = room.join("Host", b);
+    if (!r.ok) throw new Error("join failed");
+    room.uploadScenario(r.id, "mi-mision.lua", `
+      function init()
+        CpuShip():setCallSign("LUA-1"):setPosition(3000, 0):setScanned(true)
+        globalMessage("hola desde lua")
+      end
+    `);
+    expect(room.snapshot().scenario.id).toBe("custom");
+    room.handleMessage(r.id, { t: "startGame" });
+    await new Promise((res) => setTimeout(res, 800));
+    const cpu = [...room.world!.allEntities()].find((e) => e.kind === "cpu");
+    expect(cpu).toBeDefined();
+    expect(b.msgs.some((m) => m.t === "chat" && m.text === "hola desde lua")).toBe(true);
+    room.stop();
+  });
+
+  it("un escenario que no compila devuelve la sala al lobby con aviso", async () => {
+    const room = new RoomManager().create();
+    const b = fakeOutbox();
+    const r = room.join("Host", b);
+    if (!r.ok) throw new Error("join failed");
+    room.uploadScenario(r.id, "roto.lua", "function init( syntax error");
+    room.handleMessage(r.id, { t: "startGame" });
+    await new Promise((res) => setTimeout(res, 800));
+    expect(room.phase).toBe("lobby");
+    expect(b.msgs.some((m) => m.t === "chat" && m.fromName === "⚠️ Script")).toBe(true);
+    room.stop();
+  });
+
+  it("victory() del script termina la partida", async () => {
+    const room = new RoomManager().create();
+    const b = fakeOutbox();
+    const r = room.join("Host", b);
+    if (!r.ok) throw new Error("join failed");
+    room.uploadScenario(r.id, "win.lua", `
+      function update(delta) victory("Human Navy") end
+    `);
+    room.handleMessage(r.id, { t: "startGame" });
+    await new Promise((res) => setTimeout(res, 1200));
+    expect(b.msgs.some((m) => m.t === "gameOver" && m.victory)).toBe(true);
+    expect(room.phase).toBe("lobby");
+  });
+});

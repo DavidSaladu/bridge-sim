@@ -31,6 +31,8 @@ run(
 
 console.log("3/4 Empaquetando…");
 run(`cp -R "${path.join(root, "apps/web/dist")}" "${path.join(out, "public")}"`);
+run(`cp -R "${path.join(root, "scenarios")}" "${path.join(out, "scenarios")}"`);
+run(`cp "${path.join(root, "node_modules/wasmoon/dist/glue.wasm")}" "${out}/"`);
 // .env del bundle: copia el de la raíz del repo si existe; si no, usa variables de entorno
 const rootEnv = path.join(root, ".env");
 if (fs.existsSync(rootEnv)) {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { ScenarioInfo } from "@bridge/shared";
 import type { GameSnap, RoomSnapshot, ServerMsg, Station } from "@bridge/shared";
 import { STATIONS, STATION_LABELS } from "@bridge/shared";
 import { useVoice } from "./useVoice.js";
@@ -15,6 +16,12 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
   const [events, setEvents] = useState<TimedEvent[]>([]);
   const [banner, setBanner] = useState<{ victory: boolean; message: string } | null>(null);
   const [channel, setChannel] = useState<CommsChannel | null>(null);
+  const [scenarios, setScenarios] = useState<ScenarioInfo[]>([]);
+  const [customName, setCustomName] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/scenarios").then((r) => r.json()).then(setScenarios).catch(() => {});
+  }, []);
   const [activeStation, setActiveStation] = useState<Station | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
@@ -208,12 +215,52 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
       )}
 
       {!playing && me?.isHost && (
-        <div className="row" style={{ marginBottom: "1rem" }}>
-          <button onClick={() => { setBanner(null); send({ t: "startGame" }); }} style={{ fontSize: "1.1rem" }}>
-            ▶ Iniciar partida
-          </button>
-          <span className="muted">Cuando todos tengan puesto, despegamos.</span>
+        <div className="panel" style={{ marginBottom: "1rem" }}>
+          <div className="row">
+            <button onClick={() => { setBanner(null); send({ t: "startGame" }); }} style={{ fontSize: "1.1rem" }}>
+              ▶ Iniciar partida
+            </button>
+            <label className="muted">Escenario:</label>
+            <select
+              value={room?.scenario.id ?? "default"}
+              onChange={(e) => send({ t: "selectScenario", id: e.target.value })}
+              style={{ background: "var(--panel)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 4, padding: "0.4rem" }}
+            >
+              <option value="default">Clásico (incorporado)</option>
+              {scenarios.map((sc) => (
+                <option key={sc.id} value={sc.id}>{sc.name}</option>
+              ))}
+              {customName && <option value="custom">{customName} (propio)</option>}
+            </select>
+            <label style={{ cursor: "pointer", border: "1px dashed var(--accent-dim)", borderRadius: 4, padding: "0.4rem 0.8rem", fontSize: "0.85rem" }}>
+              📂 Subir .lua
+              <input
+                type="file"
+                accept=".lua"
+                style={{ display: "none" }}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const source = await file.text();
+                  setCustomName(file.name.replace(/\.lua$/, ""));
+                  send({ t: "uploadScenario", name: file.name, source });
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+          {room?.scenario.id !== "default" && (
+            <p className="muted" style={{ margin: "0.5rem 0 0", fontSize: "0.85rem" }}>
+              {scenarios.find((sc) => sc.id === room?.scenario.id)?.description ?? "Escenario scriptado en Lua."}
+            </p>
+          )}
         </div>
+      )}
+
+      {!playing && !me?.isHost && room && (
+        <p className="muted" style={{ marginBottom: "1rem" }}>
+          Escenario: <b style={{ color: "var(--accent)" }}>{room.scenario.name}</b> — esperando al host…
+        </p>
       )}
 
       <div className="stations" style={playing ? { gridTemplateColumns: "repeat(6, 1fr)", gap: "0.4rem" } : undefined}>

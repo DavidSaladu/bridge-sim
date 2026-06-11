@@ -29,11 +29,18 @@ export interface PlayerInfo {
 
 export type RoomPhase = "lobby" | "playing";
 
+export interface ScenarioInfo {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export interface RoomSnapshot {
   code: string;
   players: PlayerInfo[];
   createdAt: number;
   phase: RoomPhase;
+  scenario: { id: string; name: string };
 }
 
 /** Entidad tal y como viaja en un snapshot de partida. */
@@ -167,7 +174,9 @@ export type ClientMsg =
   | { t: "comms"; cmd: "removeWaypoint"; id: number }
   | { t: "comms"; cmd: "hail"; id: number }
   | { t: "comms"; cmd: "choose"; index: number }
-  | { t: "comms"; cmd: "closeChannel" };
+  | { t: "comms"; cmd: "closeChannel" }
+  | { t: "selectScenario"; id: string }
+  | { t: "uploadScenario"; name: string; source: string };
 
 /** Mensajes servidor → cliente */
 export type ServerMsg =

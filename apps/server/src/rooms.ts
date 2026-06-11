@@ -8,7 +8,14 @@ import type {
 } from "@bridge/shared";
 import { MAX_CHAT_LENGTH, MAX_NAME_LENGTH, MAX_PLAYERS, STATIONS } from "@bridge/shared";
 import type { RoomPhase } from "@bridge/shared";
-import { CpuShip, createTestScenario, dist, type World } from "@bridge/sim";
+import { CpuShip, World, createTestScenario, dist } from "@bridge/sim";
+import { ScenarioRunner } from "@bridge/lua-api";
+import { MAX_SCENARIO_SIZE, loadScenarioLibrary, type Scenario } from "./scenarios.js";
+
+const SCENARIO_LIBRARY = loadScenarioLibrary();
+export function getScenarioLibrary(): Scenario[] {
+  return SCENARIO_LIBRARY;
+}
 
 const genCode = customAlphabet("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6);
 const genId = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 12);
@@ -33,21 +40,83 @@ export class Room {
   private players = new Map<string, Player>();
   phase: RoomPhase = "lobby";
   world: World | null = null;
+  runner: ScenarioRunner | null = null;
+  private selectedScenario: { id: string; name: string; source: string | null };
+  private customScenario: { name: string; source: string } | null = null;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private snapCounter = 0;
+  private scriptBusy = false;
 
   constructor(code: string) {
     this.code = code;
+    this.selectedScenario = { id: "default", name: "Clásico", source: null };
+  }
+
+  selectScenario(byPlayerId: string, id: string): void {
+    const player = this.players.get(byPlayerId);
+    if (!player?.isHost || this.phase !== "lobby") return;
+    if (id === "default") {
+      this.selectedScenario = { id: "default", name: "Clásico", source: null };
+    } else if (id === "custom" && this.customScenario) {
+      this.selectedScenario = { id: "custom", name: this.customScenario.name + " (propio)", source: this.customScenario.source };
+    } else {
+      const sc = SCENARIO_LIBRARY.find((x) => x.id === id);
+      if (sc) this.selectedScenario = { id: sc.id, name: sc.name, source: sc.source };
+    }
+    this.broadcastRoom();
+  }
+
+  uploadScenario(byPlayerId: string, name: string, source: string): void {
+    const player = this.players.get(byPlayerId);
+    if (!player?.isHost || this.phase !== "lobby") return;
+    if (source.length > MAX_SCENARIO_SIZE) {
+      player.outbox?.send({ t: "error", code: "scenario_too_big", message: "El escenario supera los 100 KB" });
+      return;
+    }
+    const cleanName = name.replace(/\.lua$/, "").slice(0, 60) || "Escenario";
+    this.customScenario = { name: cleanName, source };
+    this.selectedScenario = { id: "custom", name: cleanName + " (propio)", source };
+    this.broadcastRoom();
   }
 
   startGame(byPlayerId: string): boolean {
     const p = this.players.get(byPlayerId);
     if (!p?.isHost || this.phase !== "lobby") return false;
     this.phase = "playing";
-    this.world = createTestScenario(Date.now() % 100000);
-    this.tickTimer = setInterval(() => this.tick(), 50);
+    const source = this.selectedScenario.source;
+    if (source) {
+      this.world = new World(Date.now() % 100000);
+      void this.startLuaScenario(source);
+    } else {
+      this.world = createTestScenario(Date.now() % 100000);
+      this.tickTimer = setInterval(() => this.tick(), 50);
+    }
     this.broadcastRoom();
     return true;
+  }
+
+  private async startLuaScenario(source: string): Promise<void> {
+    try {
+      const world = this.world!;
+      this.runner = await ScenarioRunner.create(world, source, {
+        onVictory: (faction) => {
+          const win = faction !== "Kraylor";
+          this.endGame(win, win ? "¡Victoria! El escenario se ha completado." : "Derrota: el escenario lo decidió así.");
+        },
+        onGlobalMessage: (text) =>
+          this.broadcast({ t: "chat", from: "sys", fromName: "🎬 Escenario", text, ts: Date.now() }),
+        onError: (message) =>
+          this.broadcast({ t: "chat", from: "sys", fromName: "⚠️ Script", text: message, ts: Date.now() }),
+      });
+      await this.runner.init();
+      this.tickTimer = setInterval(() => this.tick(), 50);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.broadcast({ t: "chat", from: "sys", fromName: "⚠️ Script", text: "El escenario no compila: " + msg.slice(0, 300), ts: Date.now() });
+      this.stop();
+      this.phase = "lobby";
+      this.broadcastRoom();
+    }
   }
 
   private tick(): void {
@@ -58,10 +127,15 @@ export class Room {
       const snap = this.world.snapshot();
       this.broadcast({ t: "snap", snap });
     }
-    // Fin de partida
+    // Script del escenario a 5 Hz (sin solaparse)
+    if (this.runner && !this.runner.stopped && this.snapCounter % 4 === 0 && !this.scriptBusy) {
+      this.scriptBusy = true;
+      void this.runner.update(0.2).finally(() => { this.scriptBusy = false; });
+    }
+    // Fin de partida: la derrota siempre; la victoria automática solo sin script
     if (this.world.playerDead) {
       this.endGame(false, "La nave ha sido destruida. Fin de la misión.");
-    } else if (this.world.hostilesAlive === 0) {
+    } else if (!this.runner && this.world.hostilesAlive === 0) {
       this.endGame(true, "Todos los hostiles destruidos. ¡Victoria!");
     }
   }
@@ -115,6 +189,8 @@ export class Room {
   stop(): void {
     if (this.tickTimer) clearInterval(this.tickTimer);
     this.tickTimer = null;
+    this.runner?.dispose();
+    this.runner = null;
     this.world = null;
   }
 
@@ -133,6 +209,7 @@ export class Room {
       code: this.code,
       createdAt: this.createdAt,
       phase: this.phase,
+      scenario: { id: this.selectedScenario.id, name: this.selectedScenario.name },
       players: [...this.players.values()].map(
         ({ id, name, stations, isHost, connected }) => ({ id, name, stations: [...stations], isHost, connected }),
       ),
@@ -212,6 +289,12 @@ export class Room {
         this.broadcast({ t: "chat", from: player.id, fromName: player.name, text, ts: Date.now() });
         break;
       }
+      case "selectScenario":
+        this.selectScenario(playerId, String(msg.id));
+        break;
+      case "uploadScenario":
+        this.uploadScenario(playerId, String(msg.name ?? ""), String(msg.source ?? ""));
+        break;
       case "startGame":
         if (!this.startGame(playerId)) {
           player.outbox?.send({ t: "error", code: "cannot_start", message: "Solo el host puede iniciar la partida" });

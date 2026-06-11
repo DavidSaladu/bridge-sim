@@ -6,7 +6,7 @@ import websocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
 import type { ClientMsg } from "@bridge/shared";
 import { AccessToken } from "livekit-server-sdk";
-import { RoomManager, type Outbox } from "./rooms.js";
+import { RoomManager, getScenarioLibrary, type Outbox } from "./rooms.js";
 
 // Carga .env simple, buscando en cwd y hasta 3 niveles hacia arriba (dev local / producción)
 for (let dir = process.cwd(), i = 0; i < 4; i++, dir = path.dirname(dir)) {
@@ -31,6 +31,10 @@ async function main(): Promise<void> {
   await app.register(websocket);
 
   app.get("/api/health", async () => ({ ok: true, rooms: manager.roomCount }));
+
+  app.get("/api/scenarios", async () =>
+    getScenarioLibrary().map(({ id, name, description }) => ({ id, name, description })),
+  );
 
   app.post("/api/rooms", async () => {
     const room = manager.create();

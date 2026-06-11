@@ -519,6 +519,23 @@ export class CpuShip extends MovingShip {
     return this.factionName === "Kraylor" && !this.surrendered;
   }
 
+  applyTemplate(name: TemplateName): void {
+    const tpl: ShipTemplate = TEMPLATES[name];
+    this.template = tpl;
+    this.spec = specFrom(tpl);
+    this.hull = tpl.hullMax;
+    this.shield = tpl.shield ?? 40;
+    this.shieldMax = tpl.shield ?? 40;
+  }
+
+  setFaction(name: string): void {
+    const map: Record<string, FactionName> = {
+      "Kraylor": "Kraylor", "Exuari": "Kraylor", "Ghosts": "Kraylor",
+      "Human Navy": "Human Navy", "Independent": "Independent", "Arlenians": "Independent",
+    };
+    this.factionName = map[name] ?? "Independent";
+  }
+
   override update(dt: number, world: World): void {
     const player = world.ship;
     const d = player && !player.dead ? dist(this, player) : Infinity;
@@ -684,6 +701,11 @@ export class World {
 
   allEntities(): IterableIterator<Entity> {
     return this.entities.values();
+  }
+
+  removeEntity(id: number): void {
+    if (id === this.ship.id) return; // la nave del jugador no se borra
+    this.entities.delete(id);
   }
 
   addStation(x: number, y: number, callSign: string): SpaceStation {
