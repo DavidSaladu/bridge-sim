@@ -2,6 +2,8 @@ name: Deploy a Hostinger
 
 on:
   workflow_dispatch: {}
+  push:
+    paths: ["deploy.trigger"]
 
 concurrency:
   group: deploy
