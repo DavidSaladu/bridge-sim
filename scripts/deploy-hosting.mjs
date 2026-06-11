@@ -30,25 +30,31 @@ run(
 );
 
 console.log("3/4 Empaquetando…");
-fs.cpSync(path.join(root, "apps/web/dist"), path.join(out, "public"), { recursive: true });
-const lk = ["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"]
-  .filter((k) => process.env[k])
-  .map((k) => `${k}=${process.env[k]}`)
-  .join("\n");
-if (lk) fs.writeFileSync(path.join(out, ".env"), lk + "\n");
+run(`cp -R "${path.join(root, "apps/web/dist")}" "${path.join(out, "public")}"`);
+// .env del bundle: copia el de la raíz del repo si existe; si no, usa variables de entorno
+const rootEnv = path.join(root, ".env");
+if (fs.existsSync(rootEnv)) {
+  fs.copyFileSync(rootEnv, path.join(out, ".env"));
+} else {
+  const lk = ["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"]
+    .filter((k) => process.env[k])
+    .map((k) => `${k}=${process.env[k]}`)
+    .join("\n");
+  if (lk) fs.writeFileSync(path.join(out, ".env"), lk + "\n");
+}
 fs.writeFileSync(
   path.join(out, "package.json"),
   JSON.stringify({ name: "bridge-sim", version: "0.1.0", main: "server.js", scripts: { start: "node server.js" } }, null, 2),
 );
-run("zip -qr ../bundle.zip .", out);
+run("zip -qr ../bundle.zip . .env", out);
 
 console.log("4/4 Desplegando vía MCP de Hostinger…");
 process.env.HOSTINGER_API_TOKEN = TOKEN;
 const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
 const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
 const transport = new StdioClientTransport({
-  command: "npx",
-  args: ["-y", "hostinger-api-mcp", "--stdio"],
+  command: "node",
+  args: [path.join(root, "node_modules", "hostinger-api-mcp", "src", "servers", "hosting.js")],
   env: process.env,
   stderr: "ignore",
 });

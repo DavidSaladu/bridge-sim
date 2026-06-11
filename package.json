@@ -17,6 +17,8 @@
     "node": ">=22"
   },
   "devDependencies": {
-    "esbuild": "^0.28.0"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "esbuild": "^0.28.0",
+    "hostinger-api-mcp": "^0.2.13"
   }
 }
