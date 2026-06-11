@@ -7,7 +7,7 @@ import fastifyStatic from "@fastify/static";
 import type { ClientMsg } from "@bridge/shared";
 import { AccessToken } from "livekit-server-sdk";
 import { TEMPLATES, type ShipTemplate } from "@bridge/sim";
-import { RoomManager, getScenarioLibrary, type Outbox } from "./rooms.js";
+import { RoomManager, getScenarioLibrary, publishScenario, type Outbox } from "./rooms.js";
 
 // Carga .env simple, buscando en cwd y hasta 3 niveles hacia arriba (dev local / producción)
 for (let dir = process.cwd(), i = 0; i < 4; i++, dir = path.dirname(dir)) {
@@ -50,6 +50,15 @@ async function main(): Promise<void> {
       drives: [t.hasWarp ? "Warp" : null, t.hasJump ? "Jump" : null].filter(Boolean).join(" + ") || "Impulso",
     })),
   );
+
+  app.post<{ Body: { name?: string; source?: string } }>("/api/scenarios", async (req, reply) => {
+    const name = String(req.body?.name ?? "").slice(0, 60).trim();
+    const source = String(req.body?.source ?? "");
+    if (!name || !source) return reply.code(400).send({ error: "Faltan nombre o código" });
+    if (source.length > 100 * 1024) return reply.code(413).send({ error: "Máximo 100 KB" });
+    const sc = publishScenario(name, source);
+    return { id: sc.id, name: sc.name };
+  });
 
   app.get<{ Params: { id: string } }>("/api/scenarios/:id/source", async (req, reply) => {
     const sc = getScenarioLibrary().find((x) => x.id === req.params.id);

@@ -10,11 +10,18 @@ import { MAX_CHAT_LENGTH, MAX_NAME_LENGTH, MAX_PLAYERS, STATIONS } from "@bridge
 import type { RoomPhase } from "@bridge/shared";
 import { CpuShip, SpaceStation, World, createTestScenario, dist } from "@bridge/sim";
 import { ScenarioRunner } from "@bridge/lua-api";
-import { MAX_SCENARIO_SIZE, loadScenarioLibrary, type Scenario } from "./scenarios.js";
+import { MAX_SCENARIO_SIZE, loadScenarioLibrary, saveUserScenario, type Scenario } from "./scenarios.js";
+import { HACK_RANGE, createSession, reveal, revealedCells, type HackSession } from "./hacking.js";
 
-const SCENARIO_LIBRARY = loadScenarioLibrary();
+let SCENARIO_LIBRARY = loadScenarioLibrary();
 export function getScenarioLibrary(): Scenario[] {
   return SCENARIO_LIBRARY;
+}
+
+export function publishScenario(name: string, source: string): Scenario {
+  const sc = saveUserScenario(name, source);
+  SCENARIO_LIBRARY = loadScenarioLibrary();
+  return sc;
 }
 
 const genCode = customAlphabet("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6);
@@ -30,6 +37,7 @@ interface Player extends PlayerInfo {
   disconnectedAt: number | null;
   resumeKey: string;
   channelTargetId: number | null;
+  hack: HackSession | null;
 }
 
 const RECONNECT_GRACE_MS = 5 * 60 * 1000;
@@ -140,6 +148,26 @@ export class Room {
     }
   }
 
+  private sendHackState(player: Player): void {
+    const session = player.hack;
+    if (!session) {
+      player.outbox?.send({ t: "hack", state: null });
+      return;
+    }
+    player.outbox?.send({
+      t: "hack",
+      state: {
+        targetCallSign: session.targetCallSign,
+        system: session.system,
+        rows: 8,
+        cols: 8,
+        cells: revealedCells(session),
+        safeLeft: session.safeLeft,
+        status: session.status,
+      },
+    });
+  }
+
   private sendChannel(player: Player, target: CpuShip): void {
     const badlyDamaged = target.hull / target.spec.hullMax < 0.3;
     const text = target.surrendered
@@ -234,6 +262,7 @@ export class Room {
       disconnectedAt: null,
       resumeKey,
       channelTargetId: null,
+      hack: null,
     };
     this.players.set(id, player);
     // Garantía: siempre debe haber un host CONECTADO. Si no lo hay, este jugador lo es.
@@ -467,6 +496,46 @@ export class Room {
           case "closeChannel":
             player.channelTargetId = null;
             player.outbox?.send({ t: "commsChannel", channel: null });
+            break;
+          case "hackStart": {
+            const target = world.get(typeof msg.id === "number" ? msg.id : -1);
+            if (!(target instanceof CpuShip) || !target.scanned) {
+              player.outbox?.send({ t: "error", code: "hack_failed", message: "Solo se hackean naves escaneadas" });
+              return;
+            }
+            if (dist(world.ship, target) > HACK_RANGE) {
+              player.outbox?.send({ t: "error", code: "hack_failed", message: "Acércate a menos de 3 km para hackear" });
+              return;
+            }
+            const system = msg.system === "engines" || msg.system === "beams" ? msg.system : "shields";
+            player.hack = createSession(target.id, target.callSign, system, Math.random);
+            this.sendHackState(player);
+            break;
+          }
+          case "hackReveal": {
+            const session = player.hack;
+            if (!session || session.status !== "playing") return;
+            if (typeof msg.x !== "number" || typeof msg.y !== "number") return;
+            reveal(session, msg.x, msg.y);
+            if ((session.status as HackSession["status"]) === "success") {
+              const target = world.get(session.targetId);
+              if (target instanceof CpuShip) {
+                if (session.system === "shields") target.shield = 0;
+                if (session.system === "engines") target.enginesDisabledUntil = world.time + 25;
+                if (session.system === "beams") target.beamsDisabledUntil = world.time + 25;
+                this.broadcast({
+                  t: "chat", from: "sys", fromName: "💻 Hackeo",
+                  text: target.callSign + ": " + (session.system === "shields" ? "escudos fundidos" : session.system === "engines" ? "motores fuera 25 s" : "rayos fuera 25 s"),
+                  ts: Date.now(),
+                });
+              }
+            }
+            this.sendHackState(player);
+            break;
+          }
+          case "hackCancel":
+            player.hack = null;
+            player.outbox?.send({ t: "hack", state: null });
             break;
           case "launchProbe":
             if (typeof msg.x === "number" && typeof msg.y === "number") {

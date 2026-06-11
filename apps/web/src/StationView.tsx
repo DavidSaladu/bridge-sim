@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Viewport3D } from "./Viewport3D.js";
+import { ScanWave } from "./ScanWave.js";
 import type { TimedEvent } from "./Radar.js";
 import type { GameSnap, MissileType, ShipSystem, Station } from "@bridge/shared";
 import { MISSILE_LABELS, MISSILE_TYPES, SHIP_SYSTEMS, STATION_LABELS, SYSTEM_LABELS } from "@bridge/shared";
@@ -11,19 +12,30 @@ export interface CommsChannel {
   options: string[];
 }
 
+export interface HackState {
+  targetCallSign: string;
+  system: string;
+  rows: number;
+  cols: number;
+  cells: { x: number; y: number; v: number }[];
+  safeLeft: number;
+  status: "playing" | "success" | "failed";
+}
+
 interface Props {
   station: Station | null;
   snap: GameSnap | null;
   send: (msg: object) => void;
   events: TimedEvent[];
   channel: CommsChannel | null;
+  hack: HackState | null;
 }
 
-export function StationView({ station, snap, send, events, channel }: Props) {
+export function StationView({ station, snap, send, events, channel, hack }: Props) {
   if (!snap) return <p className="muted">Esperando datos de la nave…</p>;
   switch (station) {
     case "comms":
-      return <CommsView snap={snap} send={send} events={events} channel={channel} />;
+      return <CommsView snap={snap} send={send} events={events} channel={channel} hack={hack} />;
     case "helm":
       return <HelmView snap={snap} send={send} events={events} />;
     case "weapons":
@@ -171,7 +183,7 @@ function WeaponsView({ snap, send, events }: { snap: GameSnap; send: (m: object)
   );
 }
 
-function CommsView({ snap, send, events, channel }: { snap: GameSnap; send: (m: object) => void; events: TimedEvent[]; channel: CommsChannel | null }) {
+function CommsView({ snap, send, events, channel, hack }: { snap: GameSnap; send: (m: object) => void; events: TimedEvent[]; channel: CommsChannel | null; hack: HackState | null }) {
   const [mode, setMode] = useState<"select" | "waypoint" | "probe">("select");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const sel = snap.entities.find((e) => e.id === selectedId);
@@ -244,11 +256,18 @@ function CommsView({ snap, send, events, channel }: { snap: GameSnap; send: (m: 
                 ))}
               </div>
             </div>
+          ) : hack ? (
+            <HackPanel hack={hack} send={send} />
           ) : sel ? (
             sel.scanned || sel.kind === "station" ? (
-              <button onClick={() => send({ t: "comms", cmd: "hail", id: sel.id })}>
-                📡 Abrir canal con {sel.callSign ?? "estación"}
-              </button>
+              <div className="row">
+                <button onClick={() => send({ t: "comms", cmd: "hail", id: sel.id })}>
+                  📡 Abrir canal con {sel.callSign ?? "estación"}
+                </button>
+                {sel.kind === "cpu" && (
+                  <HackLauncher targetId={sel.id} send={send} />
+                )}
+              </div>
             ) : (
               <p className="muted">Contacto sin escanear: pide a Ciencia que lo identifique antes de llamar.</p>
             )
@@ -274,6 +293,68 @@ function CommsView({ snap, send, events, channel }: { snap: GameSnap; send: (m: 
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function HackLauncher({ targetId, send }: { targetId: number; send: (m: object) => void }) {
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return <button onClick={() => setOpen(true)}>💻 Hackear</button>;
+  }
+  return (
+    <span className="row" style={{ gap: "0.3rem" }}>
+      {([["shields", "Escudos"], ["engines", "Motores"], ["beams", "Rayos"]] as const).map(([sys, label]) => (
+        <button
+          key={sys}
+          style={{ fontSize: "0.78rem", padding: "0.2rem 0.5rem" }}
+          onClick={() => { send({ t: "comms", cmd: "hackStart", id: targetId, system: sys }); setOpen(false); }}
+        >
+          {label}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+function HackPanel({ hack, send }: { hack: HackState; send: (m: object) => void }) {
+  const grid = new Map<string, number>();
+  for (const c of hack.cells) grid.set(c.x + "," + c.y, c.v);
+  const sysLabel = hack.system === "shields" ? "Escudos" : hack.system === "engines" ? "Motores" : "Rayos";
+  return (
+    <div>
+      <p style={{ margin: "0 0 0.4rem" }}>
+        💻 Intrusión en <b style={{ color: "#facc15" }}>{hack.targetCallSign}</b> → {sysLabel}
+        {hack.status === "playing" && <span className="muted"> · {hack.safeLeft} nodos seguros restantes</span>}
+      </p>
+      {hack.status === "failed" && <p style={{ color: "#f87171", margin: "0.25rem 0" }}>⚡ Cortafuegos activado: intrusión rechazada.</p>}
+      {hack.status === "success" && <p style={{ color: "#4ade80", margin: "0.25rem 0" }}>✓ Sistema comprometido.</p>}
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${hack.cols}, 26px)`, gap: 2 }}>
+        {Array.from({ length: hack.rows }, (_, y) =>
+          Array.from({ length: hack.cols }, (_, x) => {
+            const v = grid.get(x + "," + y);
+            const revealed = v !== undefined;
+            return (
+              <button
+                key={x + "," + y}
+                disabled={revealed || hack.status !== "playing"}
+                onClick={() => send({ t: "comms", cmd: "hackReveal", x, y })}
+                style={{
+                  width: 26, height: 26, padding: 0, fontSize: "0.75rem",
+                  background: v === -1 ? "#7f1d1d" : revealed ? "#0d1526" : "#1d2c4d",
+                  borderColor: revealed ? "var(--border)" : "var(--accent-dim)",
+                  color: v && v > 0 ? ["", "#7dd3fc", "#a3e635", "#facc15", "#fb923c", "#f87171", "#f87171", "#f87171", "#f87171"][v] : undefined,
+                }}
+              >
+                {v === -1 ? "✸" : v && v > 0 ? v : ""}
+              </button>
+            );
+          }),
+        )}
+      </div>
+      <button style={{ marginTop: "0.5rem", fontSize: "0.8rem" }} onClick={() => send({ t: "comms", cmd: "hackCancel" })}>
+        {hack.status === "playing" ? "Abortar" : "Cerrar"}
+      </button>
     </div>
   );
 }
@@ -387,20 +468,24 @@ function ScienceView({ snap, send, events }: { snap: GameSnap; send: (m: object)
                 <div>
                   <Bar label={`Análisis ${Math.round(scanning.progress * 100)}%`} frac={scanning.progress} color="#facc15" />
                   <p className="muted" style={{ fontSize: "0.78rem", margin: "0.4rem 0 0.2rem" }}>
-                    Sintoniza las dos bandas hasta maximizar la señal:
+                    Estabiliza la forma de onda (frecuencia α y fase β):
                   </p>
+                  <ScanWave
+                    signalA={ship.scanSignal?.[0] ?? 0}
+                    signalB={ship.scanSignal?.[1] ?? 0}
+                    tuneA={tune[0]}
+                  />
                   {([0, 1] as const).map((i) => (
-                    <div key={i}>
+                    <div key={i} className="row" style={{ gap: "0.5rem" }}>
+                      <span className="muted" style={{ minWidth: 14 }}>{i === 0 ? "α" : "β"}</span>
                       <input
                         type="range" min={0} max={100} value={tune[i]}
                         onChange={(e) => applyTune(i, Number(e.target.value))}
-                        style={{ width: "100%" }}
+                        style={{ flex: 1, accentColor: (ship.scanSignal?.[i] ?? 0) > 0.84 ? "#4ade80" : undefined }}
                       />
-                      <Bar
-                        label={`Señal ${i === 0 ? "α" : "β"} ${Math.round((ship.scanSignal?.[i] ?? 0) * 100)}%`}
-                        frac={ship.scanSignal?.[i] ?? 0}
-                        color={(ship.scanSignal?.[i] ?? 0) > 0.84 ? "#4ade80" : "#fb923c"}
-                      />
+                      <span style={{ minWidth: 38, fontSize: "0.78rem", color: (ship.scanSignal?.[i] ?? 0) > 0.84 ? "#4ade80" : "#fb923c" }}>
+                        {Math.round((ship.scanSignal?.[i] ?? 0) * 100)}%
+                      </span>
                     </div>
                   ))}
                 </div>

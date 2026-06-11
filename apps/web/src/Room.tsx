@@ -4,7 +4,7 @@ import { ScenarioEditor } from "./ScenarioEditor.js";
 import type { GameSnap, RoomSnapshot, ServerMsg, Station } from "@bridge/shared";
 import { STATIONS, STATION_LABELS } from "@bridge/shared";
 import { useVoice } from "./useVoice.js";
-import { StationView, type CommsChannel } from "./StationView.js";
+import { StationView, type CommsChannel, type HackState } from "./StationView.js";
 import type { TimedEvent } from "./Radar.js";
 
 interface ChatLine { fromName: string; text: string; ts: number }
@@ -17,13 +17,16 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
   const [events, setEvents] = useState<TimedEvent[]>([]);
   const [banner, setBanner] = useState<{ victory: boolean; message: string } | null>(null);
   const [channel, setChannel] = useState<CommsChannel | null>(null);
+  const [hack, setHack] = useState<HackState | null>(null);
   const [scenarios, setScenarios] = useState<ScenarioInfo[]>([]);
   const [customName, setCustomName] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
 
-  useEffect(() => {
+  function refreshScenarios() {
     fetch("/api/scenarios").then((r) => r.json()).then(setScenarios).catch(() => {});
-  }, []);
+  }
+
+  useEffect(refreshScenarios, []);
   const [activeStation, setActiveStation] = useState<Station | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
@@ -82,6 +85,9 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
             break;
           case "commsChannel":
             setChannel(msg.channel);
+            break;
+          case "hack":
+            setHack(msg.state);
             break;
           case "error":
             if (msg.code === "not_found" || msg.code === "join_failed") {
@@ -198,7 +204,7 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
               <span className="muted">teclas 1-{myStations.length} para cambiar</span>
             </div>
           )}
-          <StationView station={shownStation} snap={snap} send={send} events={events} channel={channel} />
+          <StationView station={shownStation} snap={snap} send={send} events={events} channel={channel} hack={hack} />
         </div>
       )}
 
@@ -271,6 +277,7 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
       {editorOpen && (
         <ScenarioEditor
           scenarios={scenarios}
+          onPublished={refreshScenarios}
           onClose={() => setEditorOpen(false)}
           onUse={(name, source) => {
             setCustomName(name);

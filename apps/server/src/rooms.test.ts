@@ -418,3 +418,48 @@ describe("Comms con estaciones", () => {
     room.stop();
   });
 });
+
+describe("Biblioteca persistente", () => {
+  it("publicar añade el escenario a la biblioteca con id user-", async () => {
+    const { publishScenario, getScenarioLibrary } = await import("./rooms.js");
+    const before = getScenarioLibrary().length;
+    const sc = publishScenario("Test Pérsis", "function init() globalMessage('hola') end");
+    expect(sc.id.startsWith("user-")).toBe(true);
+    expect(getScenarioLibrary().length).toBe(before + 1);
+    expect(getScenarioLibrary().some((x) => x.id === sc.id)).toBe(true);
+  });
+});
+
+describe("Hacking en sala", () => {
+  it("hackea escudos de una nave escaneada cercana", () => {
+    const room = new RoomManager().create();
+    const b = fakeOutbox();
+    const r = room.join("Hk", b);
+    if (!r.ok) throw new Error("join failed");
+    room.handleMessage(r.id, { t: "takeStation", station: "comms" });
+    room.handleMessage(r.id, { t: "startGame" });
+    const world = room.world!;
+    const cpu = [...world.allEntities()].find((e) => e.kind === "cpu") as unknown as {
+      id: number; scanned: boolean; shield: number; x: number; y: number;
+    };
+    cpu.scanned = true;
+    cpu.x = world.ship.x + 1000; cpu.y = world.ship.y;
+
+    room.handleMessage(r.id, { t: "comms", cmd: "hackStart", id: cpu.id, system: "shields" });
+    const st = b.msgs.filter((m) => m.t === "hack").pop();
+    expect(st && st.t === "hack" && st.state?.status).toBe("playing");
+
+    // ganar revelando todas las seguras (accediendo a la sesión interna)
+    const session = (room as unknown as { players: Map<string, { hack: { board: number[][] } | null }> })
+      .players.get(r.id)!.hack!;
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 8; x++) {
+        if (session.board[y]![x] !== -1) room.handleMessage(r.id, { t: "comms", cmd: "hackReveal", x, y });
+      }
+    }
+    const fin = b.msgs.filter((m) => m.t === "hack").pop();
+    expect(fin && fin.t === "hack" && fin.state?.status).toBe("success");
+    expect(cpu.shield).toBe(0);
+    room.stop();
+  });
+});

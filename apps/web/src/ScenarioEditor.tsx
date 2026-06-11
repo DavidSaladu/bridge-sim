@@ -43,6 +43,7 @@ interface Props {
   scenarios: ScenarioInfo[];
   onUse: (name: string, source: string) => void;
   onClose: () => void;
+  onPublished?: () => void;
 }
 
 function validate(source: string): { ok: true } | { ok: false; line: number; message: string } {
@@ -55,10 +56,29 @@ function validate(source: string): { ok: true } | { ok: false; line: number; mes
   }
 }
 
-export function ScenarioEditor({ scenarios, onUse, onClose }: Props) {
+export function ScenarioEditor({ scenarios, onUse, onClose, onPublished }: Props) {
   const [name, setName] = useState("Mi misión");
   const [source, setSource] = useState(TEMPLATE);
   const [status, setStatus] = useState<ReturnType<typeof validate>>({ ok: true });
+  const [publishState, setPublishState] = useState<"idle" | "saving" | "done" | "error">("idle");
+
+  async function publish() {
+    setPublishState("saving");
+    try {
+      const res = await fetch("/api/scenarios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, source }),
+      });
+      if (!res.ok) throw new Error();
+      setPublishState("done");
+      onPublished?.();
+      setTimeout(() => setPublishState("idle"), 2500);
+    } catch {
+      setPublishState("error");
+      setTimeout(() => setPublishState("idle"), 2500);
+    }
+  }
   const monacoRef = useRef<{ editor: unknown; monaco: unknown } | null>(null);
 
   function handleChange(value: string | undefined) {
@@ -123,6 +143,9 @@ export function ScenarioEditor({ scenarios, onUse, onClose }: Props) {
           {status.ok ? "✓ Sintaxis correcta" : `✗ Línea ${status.line}: ${status.message.replace(/^\[\d+:\d+\]\s*/, "")}`}
         </span>
         <button onClick={download}>⬇ Descargar</button>
+        <button disabled={!status.ok || publishState === "saving"} onClick={() => void publish()}>
+          {publishState === "done" ? "✓ Publicado" : publishState === "error" ? "✗ Error" : publishState === "saving" ? "…" : "📚 Publicar en biblioteca"}
+        </button>
         <button
           disabled={!status.ok}
           style={{ background: status.ok ? "var(--accent)" : undefined, color: status.ok ? "#082f49" : undefined }}

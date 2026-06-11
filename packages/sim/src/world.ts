@@ -682,6 +682,8 @@ export class CpuShip extends MovingShip {
   beamFreq: number;
   shieldFreq: number;
   scanLevel = 0;
+  beamsDisabledUntil = 0;
+  enginesDisabledUntil = 0;
   private missileCd = 20;
 
   get scanned(): boolean {
@@ -727,13 +729,19 @@ export class CpuShip extends MovingShip {
       super.update(dt);
       return;
     }
+    if (world.time < this.enginesDisabledUntil) {
+      // Motores hackeados: a la deriva
+      this.impulse = 0;
+      super.update(dt);
+      return;
+    }
     const beam = this.template.beam;
     if (this.hostile && beam && d < 4500) {
       // Modo ataque: perseguir y disparar
       this.targetHeading = bearing(this, player);
       this.impulse = d > 900 ? 0.8 : 0.3;
       this.beamCd = Math.max(0, this.beamCd - dt);
-      if (d <= beam.range && this.beamCd <= 0) {
+      if (d <= beam.range && this.beamCd <= 0 && world.time >= this.beamsDisabledUntil) {
         this.beamCd = beam.cycle;
         world.events.push({ k: "beam", fx: this.x, fy: this.y, tx: player.x, ty: player.y, hostile: true });
         player.takeDamage(beam.dmg, bearing(player, this), world, this.beamFreq);

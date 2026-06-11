@@ -7,3 +7,4 @@ dist/
 .DS_Store
 deploy/bundle/
 deploy/bundle.zip
+data/

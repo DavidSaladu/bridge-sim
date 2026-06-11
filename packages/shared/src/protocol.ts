@@ -193,6 +193,9 @@ export type ClientMsg =
   | { t: "comms"; cmd: "choose"; index: number }
   | { t: "comms"; cmd: "closeChannel" }
   | { t: "comms"; cmd: "launchProbe"; x: number; y: number }
+  | { t: "comms"; cmd: "hackStart"; id: number; system: "shields" | "engines" | "beams" }
+  | { t: "comms"; cmd: "hackReveal"; x: number; y: number }
+  | { t: "comms"; cmd: "hackCancel" }
   | { t: "selectScenario"; id: string }
   | { t: "uploadScenario"; name: string; source: string }
   | { t: "selfDestruct"; cmd: "arm" | "confirm" | "cancel" };
@@ -205,7 +208,19 @@ export type ServerMsg =
   | { t: "error"; code: string; message: string }
   | { t: "snap"; snap: GameSnap }
   | { t: "gameOver"; victory: boolean; message: string }
-  | { t: "commsChannel"; channel: { callSign: string; text: string; options: string[] } | null };
+  | { t: "commsChannel"; channel: { callSign: string; text: string; options: string[] } | null }
+  | {
+      t: "hack";
+      state: {
+        targetCallSign: string;
+        system: string;
+        rows: number;
+        cols: number;
+        cells: { x: number; y: number; v: number }[];
+        safeLeft: number;
+        status: "playing" | "success" | "failed";
+      } | null;
+    };
 
 export const ROOM_CODE_LENGTH = 6;
 export const MAX_PLAYERS = 6;
