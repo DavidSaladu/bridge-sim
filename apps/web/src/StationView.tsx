@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Viewport3D } from "./Viewport3D.js";
 import { ScanWave } from "./ScanWave.js";
+import { distU, sectorName, speedU } from "./units.js";
 import type { TimedEvent } from "./Radar.js";
 import type { GameSnap, MissileType, ShipSystem, Station } from "@bridge/shared";
 import { MISSILE_LABELS, MISSILE_TYPES, SHIP_SYSTEMS, STATION_LABELS, SYSTEM_LABELS } from "@bridge/shared";
@@ -186,6 +187,7 @@ function WeaponsView({ snap, send, events }: { snap: GameSnap; send: (m: object)
 function CommsView({ snap, send, events, channel, hack }: { snap: GameSnap; send: (m: object) => void; events: TimedEvent[]; channel: CommsChannel | null; hack: HackState | null }) {
   const [mode, setMode] = useState<"select" | "waypoint" | "probe">("select");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [commsRange, setCommsRange] = useState(50000);
   const sel = snap.entities.find((e) => e.id === selectedId);
 
   return (
@@ -211,12 +213,25 @@ function CommsView({ snap, send, events, channel, hack }: { snap: GameSnap; send
             🛰 Lanzar sonda ({snap.ship.probes})
           </button>
         </div>
+        <div className="row" style={{ marginBottom: "0.3rem" }}>
+          {[25000, 50000, 100000].map((r) => (
+            <button
+              key={r}
+              onClick={() => setCommsRange(r)}
+              style={{ fontSize: "0.75rem", padding: "0.15rem 0.5rem", background: commsRange === r ? "var(--accent)" : undefined, color: commsRange === r ? "#082f49" : undefined }}
+            >
+              {r / 1000} U
+            </button>
+          ))}
+          <span className="muted" style={{ fontSize: "0.78rem" }}>Tu sector: <b style={{ color: "#7dd3fc" }}>{sectorName(snap.ship.x, snap.ship.y)}</b></span>
+        </div>
         <Radar
           snap={snap}
-          range={10000}
+          range={commsRange}
           size={440}
           events={events}
           targetId={selectedId}
+          sectorGrid
           onSelectEntity={mode === "select" ? (id) => setSelectedId(id) : undefined}
           onClickWorld={
             mode === "waypoint"
@@ -283,7 +298,7 @@ function CommsView({ snap, send, events, channel, hack }: { snap: GameSnap; send
               <div key={w.id} className="row" style={{ fontSize: "0.85rem", marginTop: "0.25rem" }}>
                 <span style={{ color: "#facc15" }}>W{i + 1}</span>
                 <span className="muted">
-                  {(Math.hypot(w.x - snap.ship.x, w.y - snap.ship.y) / 1000).toFixed(1)} km
+                  {distU(Math.hypot(w.x - snap.ship.x, w.y - snap.ship.y))} · {sectorName(w.x, w.y)}
                 </span>
                 <button style={{ padding: "0 0.5rem", fontSize: "0.75rem" }} onClick={() => send({ t: "comms", cmd: "removeWaypoint", id: w.id })}>
                   ✕
@@ -361,8 +376,9 @@ function HackPanel({ hack, send }: { hack: HackState; send: (m: object) => void 
 
 function ScienceView({ snap, send, events }: { snap: GameSnap; send: (m: object) => void; events: TimedEvent[] }) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [range, setRange] = useState(15000);
+  const [range, setRange] = useState(25000);
   const [tune, setTune] = useState<[number, number]>([50, 50]);
+  const [probeViewId, setProbeViewId] = useState<number | null>(null);
   const [showDb, setShowDb] = useState(false);
   const [db, setDb] = useState<Record<string, string | number>[]>([]);
   const { ship } = snap;
@@ -389,24 +405,42 @@ function ScienceView({ snap, send, events }: { snap: GameSnap; send: (m: object)
     <div className="row" style={{ alignItems: "flex-start", gap: "1.5rem" }}>
       <div>
         <div className="row" style={{ marginBottom: "0.4rem" }}>
-          {[15000, 30000].map((r) => (
+          {[25000, 50000].map((r) => (
             <button
               key={r}
               onClick={() => setRange(r)}
-              style={{ fontSize: "0.8rem", padding: "0.2rem 0.6rem", background: range === r ? "var(--accent)" : undefined, color: range === r ? "#082f49" : undefined }}
+              style={{ fontSize: "0.8rem", padding: "0.2rem 0.6rem", background: range === r && probeViewId === null ? "var(--accent)" : undefined, color: range === r && probeViewId === null ? "#082f49" : undefined }}
             >
-              {r / 1000} km
+              {r / 1000} U
+            </button>
+          ))}
+          {snap.entities.filter((e) => e.kind === "probe").map((pr, i) => (
+            <button
+              key={pr.id}
+              onClick={() => setProbeViewId(probeViewId === pr.id ? null : pr.id)}
+              style={{ fontSize: "0.8rem", padding: "0.2rem 0.6rem", background: probeViewId === pr.id ? "#0e7490" : undefined, borderColor: "#22d3ee" }}
+              title="Vista desde la sonda"
+            >
+              🛰 S{i + 1}
             </button>
           ))}
         </div>
         <Radar
           snap={snap}
-          range={range}
+          range={probeViewId !== null ? 5000 : range}
           size={480}
           events={events}
           targetId={selectedId}
+          edgeSignals
+          center={(() => {
+            const pr = snap.entities.find((e) => e.id === probeViewId);
+            return pr ? { x: pr.x, y: pr.y } : undefined;
+          })()}
           onSelectEntity={(id) => setSelectedId(id)}
         />
+        {probeViewId !== null && !snap.entities.some((e) => e.id === probeViewId) && (
+          <p className="muted" style={{ fontSize: "0.78rem" }}>La sonda ya no existe. <button style={{ fontSize: "0.75rem" }} onClick={() => setProbeViewId(null)}>Volver a la nave</button></p>
+        )}
       </div>
       <div style={{ minWidth: 260, flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
         <Viewport3D snap={snap} height={150} />
@@ -437,7 +471,7 @@ function ScienceView({ snap, send, events }: { snap: GameSnap; send: (m: object)
             </div>
           ) : (
           <>
-          <p className="muted" style={{ marginTop: 0 }}>Radar de largo alcance. Selecciona un contacto.</p>
+          <p className="muted" style={{ marginTop: 0 }}>Radar de largo alcance (25 U). Los arcos del borde señalan fuentes lejanas: <span style={{ color: "#f87171" }}>eléctrica</span> · <span style={{ color: "#60a5fa" }}>gravimétrica</span> · <span style={{ color: "#4ade80" }}>residual</span>.</p>
           {sel ? (
             <div style={{ fontSize: "0.9rem" }}>
               <p style={{ margin: "0.25rem 0" }}>
@@ -446,7 +480,7 @@ function ScienceView({ snap, send, events }: { snap: GameSnap; send: (m: object)
               </p>
               {sel.typeName && <p className="muted" style={{ margin: "0.25rem 0" }}>{sel.typeName}</p>}
               <p className="muted" style={{ margin: "0.25rem 0" }}>
-                Distancia {(distOf(sel) / 1000).toFixed(1)} km · Marcación {bearingOf(sel)}°
+                Distancia {distU(distOf(sel))} · Marcación {bearingOf(sel)}° · Sector {sectorName(sel.x, sel.y)}
               </p>
               {scanning?.targetId === sel.id ? (
                 <div>
@@ -701,7 +735,7 @@ function HelmView({ snap, send, events }: { snap: GameSnap; send: (m: object) =>
           <tbody>
             <tr><td className="muted">Rumbo</td><td style={{ textAlign: "right" }}>{Math.round(ship.heading)}°</td></tr>
             <tr><td className="muted">Rumbo objetivo</td><td style={{ textAlign: "right", color: "#facc15" }}>{Math.round(ship.targetHeading)}°</td></tr>
-            <tr><td className="muted">Velocidad</td><td style={{ textAlign: "right", color: ship.speed < 0 ? "#f87171" : undefined }}>{Math.round(ship.speed)} m/s{ship.speed < 0 ? " (atrás)" : ""}</td></tr>
+            <tr><td className="muted">Velocidad</td><td style={{ textAlign: "right", color: ship.speed < 0 ? "#f87171" : undefined }}>{speedU(ship.speed)}{ship.speed < 0 ? " (atrás)" : ""}</td></tr>
             <tr><td className="muted">Casco</td><td style={{ textAlign: "right" }}>{Math.round(ship.hull)}/{ship.hullMax}</td></tr>
           </tbody>
         </table>
@@ -777,7 +811,7 @@ function HelmView({ snap, send, events }: { snap: GameSnap; send: (m: object) =>
               </button>
             ) : (
               <span className="muted" style={{ fontSize: "0.8rem" }}>
-                Para atracar: &lt;1 km de una estación y &lt;40 m/s
+                Para atracar: &lt;1 U de una estación y despacio
               </span>
             )}
             {ship.docked && <p className="muted" style={{ fontSize: "0.8rem", margin: "0.3rem 0 0" }}>Atracada: reparando casco y sistemas, recargando energía…</p>}
@@ -814,24 +848,25 @@ function CaptainView({ snap, events, send }: { snap: GameSnap; events: TimedEven
       ) : (
         <div>
           <div className="row" style={{ justifyContent: "center", marginBottom: "0.4rem" }}>
-            {[5000, 12000, 24000].map((r) => (
+            {[5000, 12000, 24000, 48000].map((r) => (
               <button
                 key={r}
                 onClick={() => setRange(r)}
                 style={{ fontSize: "0.8rem", padding: "0.2rem 0.6rem", background: range === r ? "var(--accent)" : undefined, color: range === r ? "#082f49" : undefined }}
               >
-                {r / 1000} km
+                {r / 1000} U
               </button>
             ))}
           </div>
           <div className="row" style={{ justifyContent: "center" }}>
-            <Radar snap={snap} range={range} size={560} events={events} />
+            <Radar snap={snap} range={range} size={560} events={events} sectorGrid={range >= 24000} />
           </div>
         </div>
       )}
       <div className="row" style={{ justifyContent: "center", gap: "2rem", marginTop: "0.5rem" }}>
         <span className="muted">Rumbo {Math.round(ship.heading)}°</span>
-        <span className="muted">{Math.round(ship.speed)} m/s</span>
+        <span className="muted">{speedU(ship.speed)}</span>
+        <span className="muted">Sector {sectorName(ship.x, ship.y)}</span>
         <span className="muted">Casco {Math.round(ship.hull)}/{ship.hullMax}</span>
         {!ship.selfDestruct ? (
           <button
@@ -908,7 +943,7 @@ function JumpPanel({ snap, send }: { snap: GameSnap; send: (m: object) => void }
             onChange={(e) => setDistKm(Number(e.target.value))}
             style={{ flex: 1 }}
           />
-          <span style={{ minWidth: 50 }}>{distKm} km</span>
+          <span style={{ minWidth: 50 }}>{distKm} U</span>
           <button onClick={() => send({ t: "helm", cmd: "chargeJump", distance: distKm * 1000 })}>
             Cargar salto
           </button>
@@ -916,7 +951,7 @@ function JumpPanel({ snap, send }: { snap: GameSnap; send: (m: object) => void }
       )}
       {charging && (
         <div className="row" style={{ marginTop: "0.25rem" }}>
-          <span style={{ color: "#a78bfa" }}>Cargando {Math.round(j.charge * 100)}% ({Math.round(j.distance / 1000)} km)</span>
+          <span style={{ color: "#a78bfa" }}>Cargando {Math.round(j.charge * 100)}% ({distU(j.distance, 0)})</span>
           <button onClick={() => send({ t: "helm", cmd: "abortJump" })} style={{ fontSize: "0.8rem", padding: "0.15rem 0.5rem" }}>
             Abortar
           </button>
@@ -927,7 +962,7 @@ function JumpPanel({ snap, send }: { snap: GameSnap; send: (m: object) => void }
           style={{ marginTop: "0.25rem", background: "#7c3aed", borderColor: "#a78bfa", fontSize: "1rem" }}
           onClick={() => send({ t: "helm", cmd: "executeJump" })}
         >
-          ⚡ SALTAR {Math.round(j.distance / 1000)} km (rumbo {Math.round(ship.heading)}°)
+          ⚡ SALTAR {distU(j.distance, 0)} (rumbo {Math.round(ship.heading)}°)
         </button>
       )}
       {cooling && <span className="muted">Recalibrando salto… {Math.round(j.cooldown)} s</span>}

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { GameSnap, SnapEvent } from "@bridge/shared";
+import { sectorName } from "./units.js";
 
 export interface TimedEvent {
   ev: SnapEvent;
@@ -16,9 +17,12 @@ interface Props {
   targetId?: number | null;
   events?: TimedEvent[];
   showBeamArc?: boolean;
+  sectorGrid?: boolean;
+  edgeSignals?: boolean;
+  center?: { x: number; y: number };
 }
 
-export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClickWorld, targetId, events, showBeamArc }: Props) {
+export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClickWorld, targetId, events, showBeamArc, sectorGrid, edgeSignals, center }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -29,6 +33,8 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
     const c = size / 2;
     const scale = c / range;
     const { ship } = snap;
+    const cx = center?.x ?? ship.x;
+    const cy = center?.y ?? ship.y;
     const now = performance.now();
 
     ctx.clearRect(0, 0, size, size);
@@ -71,18 +77,72 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
     ctx.textAlign = "start";
     ctx.textBaseline = "alphabetic";
 
+    // Rejilla de sectores de 20U con nombres (estilo Relay de EE)
+    if (sectorGrid) {
+      const SEC = 20000;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(c, c, c - 1, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.strokeStyle = "rgba(56,189,248,0.18)";
+      ctx.fillStyle = "rgba(125,211,252,0.45)";
+      ctx.font = "11px monospace";
+      const x0 = Math.floor((cx - range) / SEC) * SEC;
+      const y0 = Math.floor((cy - range) / SEC) * SEC;
+      for (let wx = x0; wx <= cx + range; wx += SEC) {
+        const sx = c + (wx - cx) * scale;
+        ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, size); ctx.stroke();
+      }
+      for (let wy = y0; wy <= cy + range + SEC; wy += SEC) {
+        const sy = c - (wy - cy) * scale;
+        ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(size, sy); ctx.stroke();
+      }
+      for (let wx = x0; wx <= cx + range; wx += SEC) {
+        for (let wy = y0; wy <= cy + range + SEC; wy += SEC) {
+          const sx = c + (wx - cx) * scale;
+          const sy = c - (wy - cy) * scale;
+          ctx.fillText(sectorName(wx + 1000, wy - 1000), sx + 4, sy + 13);
+        }
+      }
+      ctx.restore();
+    }
+
     const toScreen = (ex: number, ey: number): [number, number] | null => {
-      const dx = ex - ship.x;
-      const dy = ey - ship.y;
+      const dx = ex - cx;
+      const dy = ey - cy;
       if (Math.hypot(dx, dy) > range) return null;
       return [c + dx * scale, c - dy * scale];
     };
 
+    // Señales en el borde: dirección de fuentes más allá del alcance (Ciencia)
+    if (edgeSignals) {
+      for (const e of snap.entities) {
+        const dx = e.x - cx;
+        const dy = e.y - cy;
+        const d = Math.hypot(dx, dy);
+        if (d <= range || e.kind === "player") continue;
+        const color =
+          e.kind === "nebula" ? "96, 165, 250" :     // azul: gravimétrica
+          e.kind === "asteroid" || e.kind === "mine" ? "74, 222, 128" : // verde: biológica/residual
+          "248, 113, 113";                           // rojo: eléctrica (naves, estaciones)
+        const alpha = Math.max(0.18, Math.min(0.85, 1 - (d - range) / (range * 3)));
+        const ang = Math.atan2(dx, dy);
+        const a0 = ang - Math.PI / 2 - 0.09;
+        const a1 = ang - Math.PI / 2 + 0.09;
+        ctx.strokeStyle = `rgba(${color}, ${alpha})`;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(c, c, c - 4, a0, a1);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      }
+    }
+
     // Nebulosas: manchas violetas translúcidas (pueden verse parcialmente aunque el centro quede fuera)
     for (const e of snap.entities) {
       if (e.kind !== "nebula" || !e.radius) continue;
-      const dx = e.x - ship.x;
-      const dy = e.y - ship.y;
+      const dx = e.x - cx;
+      const dy = e.y - cy;
       const sx = c + dx * scale;
       const sy = c - dy * scale;
       const sr = e.radius * scale;
@@ -137,11 +197,17 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
         ctx.arc(sx, sy, 3, 0, Math.PI * 2);
         ctx.fill();
       } else if (e.kind === "station") {
-        ctx.strokeStyle = "#4ade80";
-        ctx.fillStyle = "rgba(74, 222, 128, 0.25)";
+        // Copo de nieve estilo EE
+        ctx.strokeStyle = e.id === targetId ? "#facc15" : "#4ade80";
         ctx.beginPath();
-        ctx.rect(sx - 5, sy - 5, 10, 10);
-        ctx.fill();
+        for (let k = 0; k < 6; k++) {
+          const a = (k / 6) * Math.PI * 2;
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(sx + Math.sin(a) * 7, sy - Math.cos(a) * 7);
+          ctx.moveTo(sx + Math.sin(a) * 4.5 + Math.sin(a + 0.6) * 2.2, sy - Math.cos(a) * 4.5 - Math.cos(a + 0.6) * 2.2);
+          ctx.lineTo(sx + Math.sin(a) * 4.5, sy - Math.cos(a) * 4.5);
+          ctx.lineTo(sx + Math.sin(a) * 4.5 + Math.sin(a - 0.6) * 2.2, sy - Math.cos(a) * 4.5 - Math.cos(a - 0.6) * 2.2);
+        }
         ctx.stroke();
         if (e.callSign) {
           ctx.fillStyle = "rgba(134, 239, 172, 0.8)";
@@ -184,19 +250,25 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
         ctx.save();
         ctx.translate(sx, sy);
         ctx.rotate((e.heading * Math.PI) / 180);
-        ctx.fillStyle = isSelf
-          ? "#38bdf8"
-          : e.scanned === false
-            ? "#94a3b8"
-            : e.faction === "hostile"
-              ? "#f87171"
-              : "#a3e635";
-        ctx.beginPath();
-        ctx.moveTo(0, -7);
-        ctx.lineTo(5, 6);
-        ctx.lineTo(-5, 6);
-        ctx.closePath();
-        ctx.fill();
+        if (!isSelf && e.scanned === false) {
+          // Desconocido: chevron blanco estilo EE
+          ctx.strokeStyle = "#e2e8f0";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(-5, 4);
+          ctx.lineTo(0, -6);
+          ctx.lineTo(5, 4);
+          ctx.stroke();
+          ctx.lineWidth = 1;
+        } else {
+          ctx.fillStyle = isSelf ? "#38bdf8" : e.faction === "hostile" ? "#f87171" : "#a3e635";
+          ctx.beginPath();
+          ctx.moveTo(0, -7);
+          ctx.lineTo(5, 6);
+          ctx.lineTo(-5, 6);
+          ctx.closePath();
+          ctx.fill();
+        }
         ctx.restore();
         if (!isSelf) {
           ctx.fillStyle = "rgba(203,213,225,0.7)";
@@ -223,8 +295,8 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
 
     // Waypoints: rombos amarillos numerados; si caen fuera, marcador en el borde
     snap.waypoints?.forEach((w, i) => {
-      const dx = w.x - ship.x;
-      const dy = w.y - ship.y;
+      const dx = w.x - cx;
+      const dy = w.y - cy;
       const d = Math.hypot(dx, dy);
       const inside = d <= range;
       let sx: number, sy: number;
@@ -254,16 +326,18 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
     ctx.lineTo(c + Math.sin(tr) * (c - 4), c - Math.cos(tr) * (c - 4));
     ctx.stroke();
     ctx.setLineDash([]);
-  }, [snap, range, size, targetId, events]);
+  }, [snap, range, size, targetId, events, sectorGrid, edgeSignals, center, showBeamArc]);
 
   function handleClick(ev: React.MouseEvent<HTMLCanvasElement>) {
     const rect = ev.currentTarget.getBoundingClientRect();
     const px = ev.clientX - rect.left - size / 2;
     const py = ev.clientY - rect.top - size / 2;
 
+    const ccx = center?.x ?? snap.ship.x;
+    const ccy = center?.y ?? snap.ship.y;
     if (onClickWorld) {
       const scale = size / 2 / range;
-      onClickWorld(snap.ship.x + px / scale, snap.ship.y - py / scale);
+      onClickWorld(ccx + px / scale, ccy - py / scale);
       return;
     }
     if (onSelectEntity) {
@@ -272,8 +346,8 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
       let best: { id: number; d: number } | null = null;
       for (const e of snap.entities) {
         if (e.kind !== "cpu" && e.kind !== "station") continue;
-        const ex = (e.x - snap.ship.x) * scale;
-        const ey = -(e.y - snap.ship.y) * scale;
+        const ex = (e.x - ccx) * scale;
+        const ey = -(e.y - ccy) * scale;
         const d = Math.hypot(ex - px, ey - py);
         if (d < 18 && (!best || d < best.d)) best = { id: e.id, d };
       }
