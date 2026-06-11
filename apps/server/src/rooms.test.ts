@@ -373,3 +373,29 @@ describe("Escenarios Lua", () => {
     expect(room.phase).toBe("lobby");
   });
 });
+
+describe("Autodestrucción", () => {
+  it("la arma el capitán, la confirma ingeniería y destruye la nave", async () => {
+    const room = new RoomManager().create();
+    const b1 = fakeOutbox();
+    const b2 = fakeOutbox();
+    const cap = room.join("Cap", b1);
+    const ing = room.join("Ing", b2);
+    if (!cap.ok || !ing.ok) throw new Error("join failed");
+    room.handleMessage(cap.id, { t: "takeStation", station: "captain" });
+    room.handleMessage(ing.id, { t: "takeStation", station: "engineering" });
+    room.handleMessage(cap.id, { t: "startGame" });
+
+    // ingeniería no puede armar
+    room.handleMessage(ing.id, { t: "selfDestruct", cmd: "arm" });
+    expect(room.world!.ship.selfDestruct).toBeNull();
+    // capitán arma, ingeniería confirma
+    room.handleMessage(cap.id, { t: "selfDestruct", cmd: "arm" });
+    expect(room.world!.ship.selfDestruct?.state).toBe("armed");
+    room.handleMessage(ing.id, { t: "selfDestruct", cmd: "confirm" });
+    expect(room.world!.ship.selfDestruct?.state).toBe("countdown");
+    room.world!.ship.selfDestruct!.t = 0.05;
+    await new Promise((r) => setTimeout(r, 300));
+    expect(b1.msgs.some((m) => m.t === "gameOver" && !m.victory)).toBe(true);
+  });
+});

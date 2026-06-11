@@ -33,7 +33,7 @@ export function StationView({ station, snap, send, events, channel }: Props) {
     case "science":
       return <ScienceView snap={snap} send={send} events={events} />;
     case "captain":
-      return <CaptainView snap={snap} events={events} />;
+      return <CaptainView snap={snap} events={events} send={send} />;
     default:
       return <GenericView station={station} snap={snap} events={events} />;
   }
@@ -65,6 +65,11 @@ function WeaponsView({ snap, send, events }: { snap: GameSnap; send: (m: object)
               target.scanned ? (
                 <>
                   {target.callSign}
+                  {target.shieldFreq != null && (
+                    <span className="muted" style={{ fontSize: "0.78rem", display: "block" }}>
+                      Escudo {target.shieldFreq} THz · Rayos {target.beamFreq} THz
+                    </span>
+                  )}
                   <Bar label="Casco" frac={target.hullFrac ?? 1} color="#f87171" />
                   <Bar label="Escudo" frac={target.shieldFrac ?? 0} color="#38bdf8" />
                 </>
@@ -128,6 +133,25 @@ function WeaponsView({ snap, send, events }: { snap: GameSnap; send: (m: object)
                 )}
               </div>
             ))}
+          </div>
+
+          <div style={{ marginBottom: "0.75rem" }}>
+            <b>Calibración</b>
+            <CalibrationRow
+              label="Rayos"
+              current={ship.beamFrequency}
+              progress={ship.beamCalibration}
+              hint={target?.shieldFreq != null ? `escudo enemigo: ${target.shieldFreq} THz` : undefined}
+              onCalibrate={(f) => send({ t: "weapons", cmd: "calibrateBeams", frequency: f })}
+            />
+            <CalibrationRow
+              label="Escudos"
+              current={ship.shieldFrequency}
+              progress={ship.shieldCalibration}
+              warning="¡escudos caídos 20 s!"
+              hint={target?.beamFreq != null ? `rayos enemigos: ${target.beamFreq} THz` : undefined}
+              onCalibrate={(f) => send({ t: "weapons", cmd: "calibrateShields", frequency: f })}
+            />
           </div>
 
           <div>
@@ -258,7 +282,16 @@ function ScienceView({ snap, send, events }: { snap: GameSnap; send: (m: object)
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [range, setRange] = useState(15000);
   const [tune, setTune] = useState<[number, number]>([50, 50]);
+  const [showDb, setShowDb] = useState(false);
+  const [db, setDb] = useState<Record<string, string | number>[]>([]);
   const { ship } = snap;
+
+  function toggleDb() {
+    if (!showDb && db.length === 0) {
+      fetch("/api/database").then((r) => r.json()).then(setDb).catch(() => {});
+    }
+    setShowDb(!showDb);
+  }
 
   function applyTune(i: 0 | 1, v: number) {
     const next: [number, number] = i === 0 ? [v, tune[1]] : [tune[0], v];
@@ -297,8 +330,33 @@ function ScienceView({ snap, send, events }: { snap: GameSnap; send: (m: object)
       <div style={{ minWidth: 260, flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
         <Viewport3D snap={snap} height={150} />
         <div className="panel">
-          <h3 style={{ marginTop: 0, color: "var(--accent)" }}>Ciencia</h3>
-          <p className="muted" style={{ marginTop: 0 }}>Radar de largo alcance (15 km). Selecciona un contacto.</p>
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <h3 style={{ margin: 0, color: "var(--accent)" }}>Ciencia</h3>
+            <button style={{ fontSize: "0.78rem", padding: "0.2rem 0.5rem" }} onClick={toggleDb}>
+              {showDb ? "← Contactos" : "📚 Base de datos"}
+            </button>
+          </div>
+          {showDb ? (
+            <div style={{ fontSize: "0.78rem", overflowX: "auto" }}>
+              <table style={{ borderSpacing: "0.5rem 0.25rem" }}>
+                <thead>
+                  <tr className="muted" style={{ textAlign: "left" }}>
+                    <th>Nave</th><th>Clase</th><th>Casco</th><th>Escudos</th><th>Vel.</th><th>Rayos</th><th>Tubos</th><th>Motores</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {db.map((t, i) => (
+                    <tr key={i}>
+                      <td style={{ color: "#7dd3fc" }}>{t.name}</td><td>{t.shipClass}</td><td>{t.hullMax}</td>
+                      <td>{t.shields}</td><td>{t.maxSpeed} m/s</td><td>{t.beam}</td><td>{t.tubes}</td><td>{t.drives}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+          <>
+          <p className="muted" style={{ marginTop: 0 }}>Radar de largo alcance. Selecciona un contacto.</p>
           {sel ? (
             <div style={{ fontSize: "0.9rem" }}>
               <p style={{ margin: "0.25rem 0" }}>
@@ -318,6 +376,12 @@ function ScienceView({ snap, send, events }: { snap: GameSnap; send: (m: object)
                   </p>
                   <Bar label={`Casco ${Math.round((sel.hullFrac ?? 0) * 100)}%`} frac={sel.hullFrac ?? 0} color="#f87171" />
                   <Bar label={`Escudos ${Math.round((sel.shieldFrac ?? 0) * 100)}%`} frac={sel.shieldFrac ?? 0} color="#38bdf8" />
+                  {sel.shieldFreq != null && (
+                    <p className="muted" style={{ fontSize: "0.78rem", margin: "0.25rem 0" }}>
+                      Frecuencias — escudo: <b style={{ color: "#7dd3fc" }}>{sel.shieldFreq} THz</b> · rayos: <b style={{ color: "#7dd3fc" }}>{sel.beamFreq} THz</b>
+                      <br />Pásaselas a Armamento para calibrar.
+                    </p>
+                  )}
                 </>
               ) : scanning?.targetId === sel.id ? (
                 <div>
@@ -351,6 +415,8 @@ function ScienceView({ snap, send, events }: { snap: GameSnap; send: (m: object)
             </div>
           ) : (
             <p className="muted">Ningún contacto seleccionado.</p>
+          )}
+          </>
           )}
         </div>
       </div>
@@ -430,6 +496,24 @@ function EngineeringView({ snap, send }: { snap: GameSnap; send: (m: object) => 
       </div>
       <div style={{ flex: 1, minWidth: 220, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
         <Viewport3D snap={snap} height={150} />
+        {ship.selfDestruct?.state === "armed" && (
+          <div className="panel" style={{ borderColor: "#f87171" }}>
+            <p style={{ color: "#f87171", margin: "0 0 0.4rem" }}>☠ El capitán ha armado la autodestrucción ({Math.ceil(ship.selfDestruct.t)} s)</p>
+            <button
+              style={{ borderColor: "#f87171", background: "#7f1d1d" }}
+              onClick={() => send({ t: "selfDestruct", cmd: "confirm" })}
+            >
+              CONFIRMAR DETONACIÓN
+            </button>
+          </div>
+        )}
+        {ship.selfDestruct?.state === "countdown" && (
+          <div className="panel" style={{ borderColor: "#f87171", textAlign: "center" }}>
+            <p style={{ color: "#f87171", fontSize: "1.3rem", margin: 0, animation: "pulse 0.4s infinite alternate" }}>
+              ☠ {Math.ceil(ship.selfDestruct.t)} ☠
+            </p>
+          </div>
+        )}
         <div className="panel">
           <h4 style={{ margin: "0 0 0.4rem", color: "var(--accent)" }}>Nave</h4>
           <Bar label={`Casco ${Math.round(ship.hull)}/${ship.hullMax}`} frac={ship.hull / ship.hullMax} color="#f87171" />
@@ -445,6 +529,40 @@ function MiniBar({ frac, color, blink }: { frac: number; color: string; blink?: 
   return (
     <div style={{ background: "#1e293b", borderRadius: 3, height: 10, animation: blink ? "pulse 0.6s infinite alternate" : undefined }}>
       <div style={{ width: `${Math.max(0, Math.min(100, frac * 100))}%`, background: color, height: 10, borderRadius: 3 }} />
+    </div>
+  );
+}
+
+function CalibrationRow({ label, current, progress, hint, warning, onCalibrate }: {
+  label: string;
+  current: number;
+  progress: number | null;
+  hint?: string;
+  warning?: string;
+  onCalibrate: (f: number) => void;
+}) {
+  const [freq, setFreq] = useState(current);
+  return (
+    <div style={{ marginTop: "0.35rem", fontSize: "0.85rem" }}>
+      <div className="row">
+        <span className="muted" style={{ minWidth: 60 }}>{label}: {current} THz</span>
+        {progress !== null ? (
+          <span style={{ color: "#facc15" }}>calibrando… {Math.round(progress * 100)}%</span>
+        ) : (
+          <>
+            <input type="range" min={0} max={20} value={freq} onChange={(e) => setFreq(Number(e.target.value))} style={{ flex: 1 }} />
+            <span style={{ minWidth: 24 }}>{freq}</span>
+            <button
+              style={{ padding: "0.1rem 0.5rem", fontSize: "0.78rem" }}
+              onClick={() => onCalibrate(freq)}
+              title={warning}
+            >
+              Calibrar
+            </button>
+          </>
+        )}
+      </div>
+      {hint && <span className="muted" style={{ fontSize: "0.75rem" }}>📡 {hint} — clava tu frecuencia para máximo efecto</span>}
     </div>
   );
 }
@@ -509,6 +627,17 @@ function HelmView({ snap, send, events }: { snap: GameSnap; send: (m: object) =>
               </button>
             ))}
           </div>
+          <div style={{ marginTop: "0.75rem" }}>
+            <label className="muted">Maniobra de combate ({Math.round(ship.combatCharge * 100)}%)</label>
+            <div style={{ background: "#1e293b", borderRadius: 3, height: 6, margin: "0.25rem 0" }}>
+              <div style={{ width: `${ship.combatCharge * 100}%`, background: ship.combatCharge > 0.34 ? "#4ade80" : "#64748b", height: 6, borderRadius: 3 }} />
+            </div>
+            <div className="row">
+              <button disabled={ship.combatCharge < 0.34} onClick={() => send({ t: "helm", cmd: "combat", maneuver: "left" })} title="Desplazamiento lateral">⬅</button>
+              <button disabled={ship.combatCharge < 0.34} onClick={() => send({ t: "helm", cmd: "combat", maneuver: "boost" })} title="Acelerón">⏫ Boost</button>
+              <button disabled={ship.combatCharge < 0.34} onClick={() => send({ t: "helm", cmd: "combat", maneuver: "right" })} title="Desplazamiento lateral">➡</button>
+            </div>
+          </div>
           {ship.hasWarp && (
             <div style={{ marginTop: "0.75rem" }}>
               <label className="muted">Warp</label>
@@ -565,7 +694,7 @@ function HelmView({ snap, send, events }: { snap: GameSnap; send: (m: object) =>
   );
 }
 
-function CaptainView({ snap, events }: { snap: GameSnap; events: TimedEvent[] }) {
+function CaptainView({ snap, events, send }: { snap: GameSnap; events: TimedEvent[]; send: (m: object) => void }) {
   const [view, setView] = useState<"3d" | "tactical">("3d");
   const [range, setRange] = useState(12000);
   const { ship } = snap;
@@ -609,8 +738,38 @@ function CaptainView({ snap, events }: { snap: GameSnap; events: TimedEvent[] })
         <span className="muted">Rumbo {Math.round(ship.heading)}°</span>
         <span className="muted">{Math.round(ship.speed)} m/s</span>
         <span className="muted">Casco {Math.round(ship.hull)}/{ship.hullMax}</span>
+        {!ship.selfDestruct ? (
+          <button
+            style={{ borderColor: "#f87171", color: "#f87171", background: "transparent", fontSize: "0.8rem" }}
+            onClick={() => send({ t: "selfDestruct", cmd: "arm" })}
+          >
+            ☠ Autodestrucción
+          </button>
+        ) : (
+          <button
+            style={{ borderColor: "#4ade80", fontSize: "0.8rem" }}
+            onClick={() => send({ t: "selfDestruct", cmd: "cancel" })}
+          >
+            Cancelar autodestrucción
+          </button>
+        )}
       </div>
+      <SelfDestructBanner sd={ship.selfDestruct} />
     </div>
+  );
+}
+
+function SelfDestructBanner({ sd }: { sd: GameSnap["ship"]["selfDestruct"] }) {
+  if (!sd) return null;
+  return (
+    <p style={{
+      textAlign: "center", color: "#f87171", fontSize: sd.state === "countdown" ? "1.4rem" : "1rem",
+      animation: "pulse 0.5s infinite alternate", margin: "0.5rem 0 0",
+    }}>
+      {sd.state === "armed"
+        ? `☠ AUTODESTRUCCIÓN ARMADA — Ingeniería debe confirmar (${Math.ceil(sd.t)} s)`
+        : `☠☠ DETONACIÓN EN ${Math.ceil(sd.t)} ☠☠`}
+    </p>
   );
 }
 

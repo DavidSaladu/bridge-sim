@@ -6,6 +6,7 @@ import websocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
 import type { ClientMsg } from "@bridge/shared";
 import { AccessToken } from "livekit-server-sdk";
+import { TEMPLATES, type ShipTemplate } from "@bridge/sim";
 import { RoomManager, getScenarioLibrary, type Outbox } from "./rooms.js";
 
 // Carga .env simple, buscando en cwd y hasta 3 niveles hacia arriba (dev local / producción)
@@ -34,6 +35,20 @@ async function main(): Promise<void> {
 
   app.get("/api/scenarios", async () =>
     getScenarioLibrary().map(({ id, name, description }) => ({ id, name, description })),
+  );
+
+  app.get("/api/database", async () =>
+    (Object.values(TEMPLATES) as ShipTemplate[]).map((t) => ({
+      name: t.name,
+      shipClass: t.shipClass,
+      hullMax: t.hullMax,
+      maxSpeed: t.maxSpeed,
+      turnRate: t.turnRate,
+      shields: t.shieldFront != null ? `${t.shieldFront}/${t.shieldRear}` : String(t.shield ?? "—"),
+      beam: t.beam ? `${t.beam.dmg} dmg · ${t.beam.range} m · ${t.beam.arc}°` : "—",
+      tubes: t.tubes ?? 0,
+      drives: [t.hasWarp ? "Warp" : null, t.hasJump ? "Jump" : null].filter(Boolean).join(" + ") || "Impulso",
+    })),
   );
 
   app.get<{ Params: { id: string } }>("/api/scenarios/:id/source", async (req, reply) => {

@@ -57,6 +57,8 @@ export interface SnapEntity {
   scanned?: boolean;
   radius?: number;
   typeName?: string;
+  beamFreq?: number;
+  shieldFreq?: number;
 }
 
 export const SHIP_SYSTEMS = ["reactor", "beams", "missiles", "maneuver", "impulse", "warp", "jump", "shields"] as const;
@@ -128,6 +130,12 @@ export interface SnapShip {
   beam: { range: number; arc: number } | null;
   probes: number;
   scanSignal: [number, number] | null;
+  beamFrequency: number;
+  shieldFrequency: number;
+  beamCalibration: number | null;
+  shieldCalibration: number | null;
+  combatCharge: number;
+  selfDestruct: { state: "armed" | "countdown"; t: number } | null;
 }
 
 export type SnapEvent =
@@ -164,9 +172,12 @@ export type ClientMsg =
   | { t: "helm"; cmd: "chargeJump"; distance: number }
   | { t: "helm"; cmd: "executeJump" }
   | { t: "helm"; cmd: "abortJump" }
+  | { t: "helm"; cmd: "combat"; maneuver: "boost" | "left" | "right" }
   | { t: "weapons"; cmd: "setTarget"; id: number | null }
   | { t: "weapons"; cmd: "loadTube"; tube: number; missile: MissileType }
   | { t: "weapons"; cmd: "unloadTube"; tube: number }
+  | { t: "weapons"; cmd: "calibrateBeams"; frequency: number }
+  | { t: "weapons"; cmd: "calibrateShields"; frequency: number }
   | { t: "weapons"; cmd: "fireTube"; tube: number }
   | { t: "weapons"; cmd: "shields"; up: boolean }
   | { t: "engineering"; cmd: "setPower"; system: ShipSystem; value: number }
@@ -182,7 +193,8 @@ export type ClientMsg =
   | { t: "comms"; cmd: "closeChannel" }
   | { t: "comms"; cmd: "launchProbe"; x: number; y: number }
   | { t: "selectScenario"; id: string }
-  | { t: "uploadScenario"; name: string; source: string };
+  | { t: "uploadScenario"; name: string; source: string }
+  | { t: "selfDestruct"; cmd: "arm" | "confirm" | "cancel" };
 
 /** Mensajes servidor → cliente */
 export type ServerMsg =

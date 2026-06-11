@@ -13,6 +13,8 @@ export interface EntityState {
   scanned?: boolean;
   radius?: number;
   typeName?: string;
+  beamFreq?: number;
+  shieldFreq?: number;
 }
 
 export type TubeStateSim = "empty" | "loading" | "loaded";
@@ -58,6 +60,12 @@ export interface PlayerShipState {
   beam: { range: number; arc: number } | null;
   probes: number;
   scanSignal: [number, number] | null;
+  beamFrequency: number;
+  shieldFrequency: number;
+  beamCalibration: number | null;
+  shieldCalibration: number | null;
+  combatCharge: number;
+  selfDestruct: { state: "armed" | "countdown"; t: number } | null;
 }
 
 export type SimEvent =

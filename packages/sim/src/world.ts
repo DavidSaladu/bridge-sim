@@ -43,6 +43,15 @@ const JUMP_COOLDOWN = 30;
 const JUMP_ENERGY_PER_KM = 3;
 const JUMP_MIN = 5000;
 const JUMP_MAX = 50000;
+const BEAM_CAL_TIME = 8;
+const SHIELD_CAL_TIME = 20;
+const COMBAT_COST = 0.34;
+const COMBAT_RECHARGE = 1 / 15; // por segundo
+
+/** Multiplicador de daño por afinidad de frecuencias: 0.5 (lejos) .. 1.5 (clavada). */
+export function freqMultiplier(beamFreq: number, shieldFreq: number): number {
+  return 1.5 - Math.min(20, Math.abs(beamFreq - shieldFreq)) / 20;
+}
 
 interface MissileSpec {
   dmg: number;
@@ -197,7 +206,7 @@ abstract class MovingShip extends Entity {
   }
 
   /** Aplica daño. Devuelve true si la nave queda destruida. */
-  abstract takeDamage(dmg: number, fromBearing: number, world: World): boolean;
+  abstract takeDamage(dmg: number, fromBearing: number, world: World, beamFreq?: number): boolean;
 
   /** Drena solo escudos (armas EMP). */
   abstract drainShields(amount: number): void;
@@ -224,6 +233,16 @@ export class PlayerShip extends MovingShip {
   jumpDistance = 10000;
   jumpCooldown = 0;
   probes = 8;
+  beamFrequency = 10;
+  shieldFrequency = 10;
+  private beamCalT: number | null = null;
+  private beamCalTarget = 10;
+  private shieldCalT: number | null = null;
+  private shieldCalTarget = 10;
+  combatCharge = 1;
+  private boostVx = 0;
+  private boostVy = 0;
+  selfDestruct: { state: "armed" | "countdown"; t: number } | null = null;
   private restockTimer = 0;
   tubes: TubeSim[];
   beamCd = 0;
@@ -339,6 +358,43 @@ export class PlayerShip extends MovingShip {
       tube.missile = missile;
     }
   }
+  calibrateBeams(freq: number): void {
+    this.beamCalTarget = Math.max(0, Math.min(20, Math.round(freq)));
+    this.beamCalT = 0;
+  }
+
+  calibrateShields(freq: number): void {
+    this.shieldCalTarget = Math.max(0, Math.min(20, Math.round(freq)));
+    this.shieldCalT = 0;
+  }
+
+  combatManeuver(kind: "boost" | "left" | "right"): boolean {
+    if (this.combatCharge < COMBAT_COST) return false;
+    this.combatCharge -= COMBAT_COST;
+    const fwd = this.heading * (Math.PI / 180);
+    if (kind === "boost") {
+      this.boostVx += Math.sin(fwd) * 400;
+      this.boostVy += Math.cos(fwd) * 400;
+    } else {
+      const side = fwd + (kind === "right" ? Math.PI / 2 : -Math.PI / 2);
+      this.boostVx += Math.sin(side) * 260;
+      this.boostVy += Math.cos(side) * 260;
+    }
+    return true;
+  }
+
+  armSelfDestruct(): void {
+    if (!this.selfDestruct) this.selfDestruct = { state: "armed", t: 30 };
+  }
+
+  confirmSelfDestruct(): void {
+    if (this.selfDestruct?.state === "armed") this.selfDestruct = { state: "countdown", t: 10 };
+  }
+
+  cancelSelfDestruct(): void {
+    this.selfDestruct = null;
+  }
+
   unloadTube(i: number): void {
     const tube = this.tubes[i];
     if (!tube || tube.state === "empty" || !tube.missile) return;
@@ -410,7 +466,7 @@ export class PlayerShip extends MovingShip {
     super.update(dt);
     this.spec = baseSpec;
     // Escudos: recarga lenta si están arriba
-    if (this.shieldsUp) {
+    if (this.shieldsUp && this.shieldCalT === null) {
       const effShields = Math.min(2, this.engineering.effectiveness("shields"));
       this.shieldFront = Math.min(this.shieldMax, this.shieldFront + 1.2 * effShields * dt);
       this.shieldRear = Math.min(this.shieldMax, this.shieldRear + 1.2 * effShields * dt);
@@ -427,6 +483,41 @@ export class PlayerShip extends MovingShip {
         }
       }
     }
+    // Maniobra de combate: recarga y empuje residual
+    this.combatCharge = Math.min(1, this.combatCharge + COMBAT_RECHARGE * dt);
+    if (Math.abs(this.boostVx) > 1 || Math.abs(this.boostVy) > 1) {
+      this.x += this.boostVx * dt;
+      this.y += this.boostVy * dt;
+      const decay = Math.exp(-1.4 * dt);
+      this.boostVx *= decay;
+      this.boostVy *= decay;
+    }
+    // Calibraciones
+    if (this.beamCalT !== null) {
+      this.beamCalT += dt;
+      if (this.beamCalT >= BEAM_CAL_TIME) {
+        this.beamFrequency = this.beamCalTarget;
+        this.beamCalT = null;
+      }
+    }
+    if (this.shieldCalT !== null) {
+      this.shieldCalT += dt;
+      if (this.shieldCalT >= SHIELD_CAL_TIME) {
+        this.shieldFrequency = this.shieldCalTarget;
+        this.shieldCalT = null;
+      }
+    }
+    // Autodestrucción
+    if (this.selfDestruct) {
+      this.selfDestruct.t -= dt;
+      if (this.selfDestruct.state === "armed" && this.selfDestruct.t <= 0) {
+        this.selfDestruct = null; // expiró sin confirmación
+      } else if (this.selfDestruct.state === "countdown" && this.selfDestruct.t <= 0) {
+        this.hull = 0;
+        this.dead = true;
+        world.events.push({ k: "boom", x: this.x, y: this.y, big: true });
+      }
+    }
     // Salto: carga y cooldown
     this.jumpCooldown = Math.max(0, this.jumpCooldown - dt);
     if (this.jumpCharging && this.jumpCharge < 1) {
@@ -437,14 +528,14 @@ export class PlayerShip extends MovingShip {
     const effBeams = Math.max(0.1, Math.min(2, this.engineering.effectiveness("beams")));
     this.beamCd = Math.max(0, this.beamCd - dt * effBeams);
     const beam = this.template.beam;
-    if (beam && this.targetId != null && this.beamCd <= 0) {
+    if (beam && this.targetId != null && this.beamCd <= 0 && this.beamCalT === null) {
       const target = world.get(this.targetId);
       if (target && target instanceof MovingShip && dist(this, target) <= beam.range) {
         const rel = Math.abs(angleDiff(this.heading, bearing(this, target)));
         if (rel <= beam.arc / 2) {
           this.beamCd = beam.cycle;
           world.events.push({ k: "beam", fx: this.x, fy: this.y, tx: target.x, ty: target.y, hostile: false });
-          target.takeDamage(beam.dmg, bearing(target, this), world);
+          target.takeDamage(beam.dmg, bearing(target, this), world, this.beamFrequency);
         }
       }
     }
@@ -477,8 +568,10 @@ export class PlayerShip extends MovingShip {
     this.shieldRear = Math.max(0, this.shieldRear - half);
   }
 
-  takeDamage(dmg: number, fromBearing: number, world: World): boolean {
-    if (this.shieldsUp) {
+  takeDamage(dmg: number, fromBearing: number, world: World, beamFreq?: number): boolean {
+    const shieldsActive = this.shieldsUp && this.shieldCalT === null;
+    if (beamFreq !== undefined && shieldsActive) dmg *= freqMultiplier(beamFreq, this.shieldFrequency);
+    if (shieldsActive) {
       const rel = Math.abs(angleDiff(this.heading, fromBearing));
       const front = rel <= 90;
       const pool = front ? "shieldFront" : "shieldRear";
@@ -529,6 +622,12 @@ export class PlayerShip extends MovingShip {
         : null,
       beam: this.template.beam ? { range: this.template.beam.range, arc: this.template.beam.arc } : null,
       probes: this.probes,
+      beamFrequency: this.beamFrequency,
+      shieldFrequency: this.shieldFrequency,
+      beamCalibration: this.beamCalT !== null ? this.beamCalT / BEAM_CAL_TIME : null,
+      shieldCalibration: this.shieldCalT !== null ? this.shieldCalT / SHIELD_CAL_TIME : null,
+      combatCharge: this.combatCharge,
+      selfDestruct: this.selfDestruct ? { ...this.selfDestruct } : null,
       docked: this.dockedTo != null,
       canDock: this.dockedTo == null && this.speed <= DOCK_MAX_SPEED && this.nearestDockable(world) != null,
       warp: this.warp,
@@ -576,7 +675,12 @@ export class CpuShip extends MovingShip {
     this.shield = tpl.shield ?? 40;
     this.shieldMax = tpl.shield ?? 40;
     this.impulse = 0.5;
+    this.beamFreq = Math.floor(rng() * 21);
+    this.shieldFreq = Math.floor(rng() * 21);
   }
+
+  beamFreq: number;
+  shieldFreq: number;
 
   get hostile(): boolean {
     return this.factionName === "Kraylor" && !this.surrendered;
@@ -622,7 +726,7 @@ export class CpuShip extends MovingShip {
       if (d <= beam.range && this.beamCd <= 0) {
         this.beamCd = beam.cycle;
         world.events.push({ k: "beam", fx: this.x, fy: this.y, tx: player.x, ty: player.y, hostile: true });
-        player.takeDamage(beam.dmg, bearing(player, this), world);
+        player.takeDamage(beam.dmg, bearing(player, this), world, this.beamFreq);
       }
     } else {
       this.nextDecision -= dt;
@@ -639,7 +743,8 @@ export class CpuShip extends MovingShip {
     this.shield = Math.max(0, this.shield - amount);
   }
 
-  takeDamage(dmg: number, _fromBearing: number, world: World): boolean {
+  takeDamage(dmg: number, _fromBearing: number, world: World, beamFreq?: number): boolean {
+    if (beamFreq !== undefined && this.shield > 0) dmg *= freqMultiplier(beamFreq, this.shieldFreq);
     const absorbed = Math.min(this.shield, dmg);
     this.shield -= absorbed;
     dmg -= absorbed;
@@ -664,6 +769,8 @@ export class CpuShip extends MovingShip {
       hullFrac: this.hull / this.spec.hullMax,
       shieldFrac: this.shield / this.shieldMax,
       scanned: true,
+      beamFreq: this.beamFreq,
+      shieldFreq: this.shieldFreq,
     };
   }
 }

@@ -392,3 +392,71 @@ describe("Sondas", () => {
     expect(w.ship.tubes[0]!.state).toBe("empty");
   });
 });
+
+describe("Frecuencias, maniobras y autodestrucción", () => {
+  it("la afinidad de frecuencia multiplica el daño a escudos (x1.5 clavada, x0.5 opuesta)", () => {
+    const w = new World(13);
+    const a = w.addCpuShip(0, 800, "FR-A");
+    a.shieldFreq = 10;
+    w.ship.beamFrequency = 10;
+    w.ship.setTarget(a.id);
+    w.tick();
+    const dmgTuned = a.shieldMax - a.shield;
+
+    const w2 = new World(13);
+    const b = w2.addCpuShip(0, 800, "FR-B");
+    b.shieldFreq = 0;
+    w2.ship.beamFrequency = 20;
+    w2.ship.setTarget(b.id);
+    w2.tick();
+    const dmgOff = b.shieldMax - b.shield;
+    expect(dmgTuned).toBeGreaterThan(dmgOff * 2.5);
+  });
+
+  it("calibrar escudos los deja caídos durante la calibración", () => {
+    const w = new World(13);
+    w.ship.calibrateShields(5);
+    const e = w.addCpuShip(0, 900, "FR-C");
+    e.heading = 180; e.targetHeading = 180;
+    const hull0 = w.ship.hull;
+    for (let i = 0; i < 20 * 3; i++) w.tick();
+    expect(w.ship.hull).toBeLessThan(hull0); // el daño fue directo al casco
+    for (let i = 0; i < 20 * 18; i++) w.tick();
+    expect(w.ship.shieldFrequency).toBe(5); // calibración completada
+  });
+
+  it("calibrar rayos los deja sin disparar hasta terminar", () => {
+    const w = new World(13);
+    const e = w.addCpuShip(0, 800, "FR-D");
+    e.impulse = 0;
+    w.ship.setTarget(e.id);
+    w.ship.calibrateBeams(7);
+    for (let i = 0; i < 20 * 4; i++) w.tick();
+    expect(e.shield).toBe(e.shieldMax); // sin daño durante calibración
+    for (let i = 0; i < 20 * 5; i++) w.tick();
+    expect(w.ship.beamFrequency).toBe(7);
+    expect(e.shield).toBeLessThan(e.shieldMax); // ya dispara
+  });
+
+  it("la maniobra de combate impulsa la nave y consume carga", () => {
+    const w = new World(13);
+    expect(w.ship.combatManeuver("boost")).toBe(true);
+    expect(w.ship.combatCharge).toBeLessThan(0.7);
+    for (let i = 0; i < 20 * 2; i++) w.tick();
+    expect(w.ship.y).toBeGreaterThan(150); // empujón hacia delante
+    w.ship.combatCharge = 0.1;
+    expect(w.ship.combatManeuver("left")).toBe(false); // sin carga
+  });
+
+  it("autodestrucción: armado expira; confirmado cuenta atrás y destruye", () => {
+    const w = new World(13);
+    w.ship.armSelfDestruct();
+    for (let i = 0; i < 20 * 31; i++) w.tick();
+    expect(w.ship.selfDestruct).toBeNull(); // expiró
+
+    w.ship.armSelfDestruct();
+    w.ship.confirmSelfDestruct();
+    for (let i = 0; i < 20 * 11; i++) w.tick();
+    expect(w.playerDead).toBe(true);
+  });
+});

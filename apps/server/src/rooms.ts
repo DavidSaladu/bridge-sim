@@ -295,6 +295,32 @@ export class Room {
       case "uploadScenario":
         this.uploadScenario(playerId, String(msg.name ?? ""), String(msg.source ?? ""));
         break;
+      case "selfDestruct": {
+        const ship = this.world?.ship;
+        if (!ship) return;
+        if (msg.cmd === "arm" || msg.cmd === "cancel") {
+          if (!player.stations.includes("captain")) {
+            player.outbox?.send({ t: "error", code: "wrong_station", message: "Solo el capitán arma o cancela la autodestrucción" });
+            return;
+          }
+          if (msg.cmd === "arm") {
+            ship.armSelfDestruct();
+            this.broadcast({ t: "chat", from: "sys", fromName: "☠️ AUTODESTRUCCIÓN", text: "Secuencia armada por el capitán. Ingeniería debe confirmar en 30 s.", ts: Date.now() });
+          } else {
+            ship.cancelSelfDestruct();
+            this.broadcast({ t: "chat", from: "sys", fromName: "☠️ AUTODESTRUCCIÓN", text: "Secuencia cancelada.", ts: Date.now() });
+          }
+        }
+        if (msg.cmd === "confirm") {
+          if (!player.stations.includes("engineering")) {
+            player.outbox?.send({ t: "error", code: "wrong_station", message: "Solo Ingeniería puede confirmar" });
+            return;
+          }
+          ship.confirmSelfDestruct();
+          this.broadcast({ t: "chat", from: "sys", fromName: "☠️ AUTODESTRUCCIÓN", text: "CONFIRMADA. Detonación en 10 segundos.", ts: Date.now() });
+        }
+        break;
+      }
       case "startGame":
         if (!this.startGame(playerId)) {
           player.outbox?.send({ t: "error", code: "cannot_start", message: "Solo el host puede iniciar la partida" });
@@ -319,6 +345,9 @@ export class Room {
         }
         if (msg.cmd === "undock") ship.undock();
         if (msg.cmd === "setWarp" && typeof msg.value === "number") ship.setWarp(msg.value);
+        if (msg.cmd === "combat" && (msg.maneuver === "boost" || msg.maneuver === "left" || msg.maneuver === "right")) {
+          ship.combatManeuver(msg.maneuver);
+        }
         if (msg.cmd === "chargeJump" && typeof msg.distance === "number" && this.world) {
           if (!ship.chargeJump(msg.distance)) {
             player.outbox?.send({ t: "error", code: "jump_failed", message: "Salto no disponible (cooldown, atraque o carga en curso)" });
@@ -430,6 +459,12 @@ export class Room {
             break;
           case "unloadTube":
             if (typeof msg.tube === "number") ship.unloadTube(msg.tube);
+            break;
+          case "calibrateBeams":
+            if (typeof msg.frequency === "number") ship.calibrateBeams(msg.frequency);
+            break;
+          case "calibrateShields":
+            if (typeof msg.frequency === "number") ship.calibrateShields(msg.frequency);
             break;
           case "fireTube":
             if (typeof msg.tube === "number") ship.fireTube(msg.tube, this.world);
