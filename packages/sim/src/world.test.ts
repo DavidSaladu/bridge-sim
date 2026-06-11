@@ -160,3 +160,26 @@ describe("Ciencia: escaneo", () => {
     expect(w.ship.startScan(c.id, w)).toBe(false);
   });
 });
+
+describe("Comms: waypoints y rendición", () => {
+  it("añade y elimina waypoints (máx 9)", () => {
+    const w = new World(4);
+    for (let i = 0; i < 12; i++) w.addWaypoint(i * 100, 0);
+    expect(w.snapshot().waypoints).toHaveLength(9);
+    const first = w.snapshot().waypoints[0]!;
+    w.removeWaypoint(first.id);
+    expect(w.snapshot().waypoints).toHaveLength(8);
+  });
+
+  it("una nave rendida no ataca, es neutral y no bloquea la victoria", () => {
+    const w = new World(4);
+    const c = w.addCpuShip(0, 1000, "KR-R");
+    c.scanned = true;
+    c.surrendered = true;
+    const shieldBefore = w.ship.shieldFront + w.ship.shieldRear;
+    for (let i = 0; i < 20 * 8; i++) w.tick();
+    expect(w.ship.shieldFront + w.ship.shieldRear).toBe(shieldBefore);
+    expect(w.snapshot().entities.find((e) => e.kind === "cpu")?.faction).toBe("neutral");
+    expect(w.hostilesAlive).toBe(0);
+  });
+});

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { GameSnap, RoomSnapshot, ServerMsg, Station } from "@bridge/shared";
 import { STATIONS, STATION_LABELS } from "@bridge/shared";
 import { useVoice } from "./useVoice.js";
-import { StationView } from "./StationView.js";
+import { StationView, type CommsChannel } from "./StationView.js";
 import type { TimedEvent } from "./Radar.js";
 
 interface ChatLine { fromName: string; text: string; ts: number }
@@ -14,6 +14,7 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
   const [snap, setSnap] = useState<GameSnap | null>(null);
   const [events, setEvents] = useState<TimedEvent[]>([]);
   const [banner, setBanner] = useState<{ victory: boolean; message: string } | null>(null);
+  const [channel, setChannel] = useState<CommsChannel | null>(null);
   const [activeStation, setActiveStation] = useState<Station | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
@@ -68,6 +69,10 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
             setBanner({ victory: msg.victory, message: msg.message });
             setSnap(null);
             setEvents([]);
+            setChannel(null);
+            break;
+          case "commsChannel":
+            setChannel(msg.channel);
             break;
           case "error":
             if (msg.code === "not_found" || msg.code === "join_failed") {
@@ -184,7 +189,7 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
               <span className="muted">teclas 1-{myStations.length} para cambiar</span>
             </div>
           )}
-          <StationView station={shownStation} snap={snap} send={send} events={events} />
+          <StationView station={shownStation} snap={snap} send={send} events={events} channel={channel} />
         </div>
       )}
 

@@ -5,16 +5,25 @@ import type { GameSnap, ShipSystem, Station } from "@bridge/shared";
 import { SHIP_SYSTEMS, STATION_LABELS, SYSTEM_LABELS } from "@bridge/shared";
 import { Radar } from "./Radar.js";
 
+export interface CommsChannel {
+  callSign: string;
+  text: string;
+  options: string[];
+}
+
 interface Props {
   station: Station | null;
   snap: GameSnap | null;
   send: (msg: object) => void;
   events: TimedEvent[];
+  channel: CommsChannel | null;
 }
 
-export function StationView({ station, snap, send, events }: Props) {
+export function StationView({ station, snap, send, events, channel }: Props) {
   if (!snap) return <p className="muted">Esperando datos de la nave…</p>;
   switch (station) {
+    case "comms":
+      return <CommsView snap={snap} send={send} events={events} channel={channel} />;
     case "helm":
       return <HelmView snap={snap} send={send} events={events} />;
     case "weapons":
@@ -109,6 +118,101 @@ function WeaponsView({ snap, send, events }: { snap: GameSnap; send: (m: object)
             </button>
             <Bar label={`Proa ${ship.shieldFront}`} frac={ship.shieldFront / ship.shieldMax} color="#38bdf8" />
             <Bar label={`Popa ${ship.shieldRear}`} frac={ship.shieldRear / ship.shieldMax} color="#38bdf8" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CommsView({ snap, send, events, channel }: { snap: GameSnap; send: (m: object) => void; events: TimedEvent[]; channel: CommsChannel | null }) {
+  const [mode, setMode] = useState<"select" | "waypoint">("select");
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const sel = snap.entities.find((e) => e.id === selectedId);
+
+  return (
+    <div className="row" style={{ alignItems: "flex-start", gap: "1.5rem" }}>
+      <div>
+        <div className="row" style={{ marginBottom: "0.4rem" }}>
+          <button
+            style={mode === "select" ? { background: "var(--accent)", color: "#082f49" } : undefined}
+            onClick={() => setMode("select")}
+          >
+            Seleccionar
+          </button>
+          <button
+            style={mode === "waypoint" ? { background: "var(--accent)", color: "#082f49" } : undefined}
+            onClick={() => setMode("waypoint")}
+          >
+            📍 Poner waypoint
+          </button>
+        </div>
+        <Radar
+          snap={snap}
+          range={10000}
+          size={440}
+          events={events}
+          targetId={selectedId}
+          onSelectEntity={mode === "select" ? (id) => setSelectedId(id) : undefined}
+          onClickWorld={mode === "waypoint" ? (x, y) => send({ t: "comms", cmd: "addWaypoint", x, y }) : undefined}
+        />
+      </div>
+      <div style={{ minWidth: 280, flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        <Viewport3D snap={snap} height={150} />
+        <div className="panel">
+          <h3 style={{ marginTop: 0, color: "var(--accent)" }}>Comunicaciones</h3>
+
+          {channel ? (
+            <div>
+              <p style={{ margin: "0.25rem 0" }}>
+                📡 Canal con <b style={{ color: "#facc15" }}>{channel.callSign}</b>
+              </p>
+              <p style={{ fontStyle: "italic", background: "rgba(56,189,248,0.07)", padding: "0.5rem", borderRadius: 6 }}>
+                “{channel.text}”
+              </p>
+              <div className="row" style={{ flexWrap: "wrap" }}>
+                {channel.options.map((opt, i) => (
+                  <button
+                    key={i}
+                    style={{ padding: "0.3rem 0.7rem", fontSize: "0.85rem" }}
+                    onClick={() =>
+                      opt === "Cerrar canal"
+                        ? send({ t: "comms", cmd: "closeChannel" })
+                        : send({ t: "comms", cmd: "choose", index: i })
+                    }
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : sel ? (
+            sel.scanned ? (
+              <button onClick={() => send({ t: "comms", cmd: "hail", id: sel.id })}>
+                📡 Abrir canal con {sel.callSign}
+              </button>
+            ) : (
+              <p className="muted">Contacto sin escanear: pide a Ciencia que lo identifique antes de llamar.</p>
+            )
+          ) : (
+            <p className="muted">Selecciona una nave para abrir canal.</p>
+          )}
+
+          <div style={{ marginTop: "0.75rem" }}>
+            <b>Waypoints</b>{" "}
+            <span className="muted" style={{ fontSize: "0.8rem" }}>(visibles en todo el puente)</span>
+            {snap.waypoints.length === 0 && <p className="muted" style={{ fontSize: "0.85rem" }}>Ninguno. Usa “📍 Poner waypoint” y pulsa en el radar.</p>}
+            {snap.waypoints.map((w, i) => (
+              <div key={w.id} className="row" style={{ fontSize: "0.85rem", marginTop: "0.25rem" }}>
+                <span style={{ color: "#facc15" }}>W{i + 1}</span>
+                <span className="muted">
+                  {(Math.hypot(w.x - snap.ship.x, w.y - snap.ship.y) / 1000).toFixed(1)} km
+                </span>
+                <button style={{ padding: "0 0.5rem", fontSize: "0.75rem" }} onClick={() => send({ t: "comms", cmd: "removeWaypoint", id: w.id })}>
+                  ✕
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       </div>

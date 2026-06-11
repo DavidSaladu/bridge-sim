@@ -8,7 +8,7 @@ import type {
 } from "@bridge/shared";
 import { MAX_CHAT_LENGTH, MAX_NAME_LENGTH, MAX_PLAYERS, STATIONS } from "@bridge/shared";
 import type { RoomPhase } from "@bridge/shared";
-import { createTestScenario, type World } from "@bridge/sim";
+import { CpuShip, createTestScenario, dist, type World } from "@bridge/sim";
 
 const genCode = customAlphabet("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6);
 const genId = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 12);
@@ -22,6 +22,7 @@ interface Player extends PlayerInfo {
   outbox: Outbox | null;
   disconnectedAt: number | null;
   resumeKey: string;
+  channelTargetId: number | null;
 }
 
 const RECONNECT_GRACE_MS = 5 * 60 * 1000;
@@ -63,6 +64,45 @@ export class Room {
     } else if (this.world.hostilesAlive === 0) {
       this.endGame(true, "Todos los hostiles destruidos. ¡Victoria!");
     }
+  }
+
+  private sendChannel(player: Player, target: CpuShip): void {
+    const badlyDamaged = target.hull / target.spec.hullMax < 0.3;
+    const text = target.surrendered
+      ? "Nos hemos rendido. No disparen, por favor."
+      : badlyDamaged
+        ? "*interferencias* …nuestros sistemas fallan… ¿qué queréis?"
+        : "Aquí " + target.callSign + ". Abandonad el sector o abriremos fuego.";
+    const options = target.surrendered ? ["Cerrar canal"] : ["Exigir rendición", "Amenazar", "Cerrar canal"];
+    player.outbox?.send({ t: "commsChannel", channel: { callSign: target.callSign, text, options } });
+  }
+
+  private handleChannelChoice(player: Player, target: CpuShip, index: number): void {
+    const badlyDamaged = target.hull / target.spec.hullMax < 0.3;
+    if (target.surrendered || (target.surrendered === false && index === (target.surrendered ? 0 : 2))) {
+      // "Cerrar canal"
+      player.channelTargetId = null;
+      player.outbox?.send({ t: "commsChannel", channel: null });
+      return;
+    }
+    let text: string;
+    if (index === 0) {
+      // Exigir rendición
+      if (badlyDamaged) {
+        target.surrendered = true;
+        text = "…está bien. Nos rendimos. Cesamos toda actividad de combate.";
+        this.broadcast({ t: "chat", from: "sys", fromName: "📡 " + target.callSign, text: "Se ha rendido.", ts: Date.now() });
+      } else {
+        text = "¿Rendirnos? Ja. Tendréis que destruirnos.";
+      }
+    } else {
+      // Amenazar
+      text = badlyDamaged
+        ? "*estática* …no nos asustáis… apenas…"
+        : "Vuestras amenazas no significan nada, " + (this.world?.ship.callSign ?? "nave") + ".";
+    }
+    const options = target.surrendered ? ["Cerrar canal"] : ["Exigir rendición", "Amenazar", "Cerrar canal"];
+    player.outbox?.send({ t: "commsChannel", channel: { callSign: target.callSign, text, options } });
   }
 
   private endGame(victory: boolean, message: string): void {
@@ -116,6 +156,7 @@ export class Room {
       outbox,
       disconnectedAt: null,
       resumeKey,
+      channelTargetId: null,
     };
     this.players.set(id, player);
     // Garantía: siempre debe haber un host CONECTADO. Si no lo hay, este jugador lo es.
@@ -220,6 +261,47 @@ export class Room {
           }
         }
         if (msg.cmd === "cancelScan") ship.cancelScan();
+        break;
+      }
+      case "comms": {
+        if (!player.stations.includes("comms")) {
+          player.outbox?.send({ t: "error", code: "wrong_station", message: "No estás en Comunicaciones" });
+          return;
+        }
+        if (!this.world) return;
+        const world = this.world;
+        switch (msg.cmd) {
+          case "addWaypoint":
+            if (typeof msg.x === "number" && typeof msg.y === "number") world.addWaypoint(msg.x, msg.y);
+            break;
+          case "removeWaypoint":
+            if (typeof msg.id === "number") world.removeWaypoint(msg.id);
+            break;
+          case "hail": {
+            const target = world.get(typeof msg.id === "number" ? msg.id : -1);
+            if (!(target instanceof CpuShip) || !target.scanned) {
+              player.outbox?.send({ t: "error", code: "hail_failed", message: "Solo puedes llamar a contactos escaneados" });
+              return;
+            }
+            if (dist(world.ship, target) > 20000) {
+              player.outbox?.send({ t: "error", code: "hail_failed", message: "Fuera de alcance de comunicaciones" });
+              return;
+            }
+            player.channelTargetId = target.id;
+            this.sendChannel(player, target);
+            break;
+          }
+          case "choose": {
+            const target = player.channelTargetId != null ? world.get(player.channelTargetId) : undefined;
+            if (!(target instanceof CpuShip)) return;
+            this.handleChannelChoice(player, target, msg.index);
+            break;
+          }
+          case "closeChannel":
+            player.channelTargetId = null;
+            player.outbox?.send({ t: "commsChannel", channel: null });
+            break;
+        }
         break;
       }
       case "weapons": {

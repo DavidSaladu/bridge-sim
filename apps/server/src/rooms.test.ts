@@ -252,3 +252,47 @@ describe("Ciencia", () => {
     room.stop();
   });
 });
+
+describe("Comunicaciones", () => {
+  function setupComms() {
+    const room = new RoomManager().create();
+    const b = fakeOutbox();
+    const r = room.join("Com", b);
+    if (!r.ok) throw new Error("join failed");
+    room.handleMessage(r.id, { t: "takeStation", station: "comms" });
+    room.handleMessage(r.id, { t: "startGame" });
+    const world = room.world!;
+    const cpu = [...world.snapshot().entities].find((e) => e.kind === "cpu")!;
+    return { room, b, r, world, cpu };
+  }
+
+  it("waypoints se añaden y aparecen en snapshots", () => {
+    const { room, r, world } = setupComms();
+    room.handleMessage(r.id, { t: "comms", cmd: "addWaypoint", x: 1000, y: -2000 });
+    expect(world.snapshot().waypoints).toHaveLength(1);
+    room.stop();
+  });
+
+  it("no se puede llamar a un contacto sin escanear; escaneado sí, y la rendición funciona", () => {
+    const { room, b, r, world, cpu } = setupComms();
+    room.handleMessage(r.id, { t: "comms", cmd: "hail", id: cpu.id });
+    expect(b.msgs.some((m) => m.t === "error" && m.code === "hail_failed")).toBe(true);
+
+    const ship = world.get(cpu.id) as unknown as { scanned: boolean; hull: number; surrendered: boolean };
+    ship.scanned = true;
+    room.handleMessage(r.id, { t: "comms", cmd: "hail", id: cpu.id });
+    const ch = b.msgs.find((m) => m.t === "commsChannel");
+    expect(ch && ch.t === "commsChannel" && ch.channel?.options).toContain("Exigir rendición");
+
+    // intacta: se niega
+    room.handleMessage(r.id, { t: "comms", cmd: "choose", index: 0 });
+    expect(ship.surrendered).toBe(false);
+
+    // malherida: se rinde
+    ship.hull = 5;
+    room.handleMessage(r.id, { t: "comms", cmd: "choose", index: 0 });
+    expect(ship.surrendered).toBe(true);
+    expect(world.hostilesAlive).toBe(1); // queda el otro KR
+    room.stop();
+  });
+});

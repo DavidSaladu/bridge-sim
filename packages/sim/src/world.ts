@@ -279,6 +279,7 @@ export class PlayerShip extends MovingShip {
 export class CpuShip extends MovingShip {
   callSign: string;
   scanned = false;
+  surrendered = false;
   shield = 40;
   shieldMax = 40;
   private nextDecision = 0;
@@ -293,6 +294,17 @@ export class CpuShip extends MovingShip {
   override update(dt: number, world: World): void {
     const player = world.ship;
     const d = player && !player.dead ? dist(this, player) : Infinity;
+    if (this.surrendered) {
+      // Rendida: deriva lenta, sin combate
+      this.impulse = 0.2;
+      this.nextDecision -= dt;
+      if (this.nextDecision <= 0) {
+        this.targetHeading = this.rng() * 360;
+        this.nextDecision = 10 + this.rng() * 10;
+      }
+      super.update(dt);
+      return;
+    }
     if (d < 4500) {
       // Modo ataque: perseguir y disparar
       this.targetHeading = bearing(this, player);
@@ -334,7 +346,7 @@ export class CpuShip extends MovingShip {
     return {
       ...super.state(),
       callSign: this.callSign,
-      faction: "hostile",
+      faction: this.surrendered ? "neutral" : "hostile",
       hullFrac: this.hull / this.spec.hullMax,
       shieldFrac: this.shield / this.shieldMax,
       scanned: true,
@@ -381,6 +393,17 @@ export class World {
   ship: PlayerShip;
   rng: () => number;
   events: SimEvent[] = [];
+  waypoints: { id: number; x: number; y: number }[] = [];
+  private nextWaypointId = 1;
+
+  addWaypoint(x: number, y: number): void {
+    if (this.waypoints.length >= 9) return;
+    this.waypoints.push({ id: this.nextWaypointId++, x, y });
+  }
+
+  removeWaypoint(id: number): void {
+    this.waypoints = this.waypoints.filter((w) => w.id !== id);
+  }
 
   constructor(seed = 42) {
     this.rng = makeRng(seed);
@@ -417,7 +440,9 @@ export class World {
 
   get hostilesAlive(): number {
     let n = 0;
-    for (const e of this.entities.values()) if (e instanceof CpuShip && !e.dead) n++;
+    for (const e of this.entities.values()) {
+      if (e instanceof CpuShip && !e.dead && !e.surrendered) n++;
+    }
     return n;
   }
 
@@ -439,6 +464,7 @@ export class World {
       ship: this.ship.playerState(),
       entities: [...this.entities.values()].filter((e) => !e.dead).map((e) => e.state()),
       events: this.events,
+      waypoints: [...this.waypoints],
     };
     this.events = [];
     return snap;

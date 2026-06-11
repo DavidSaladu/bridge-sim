@@ -55,4 +55,5 @@ export interface WorldSnapshot {
   ship: PlayerShipState;
   entities: EntityState[];
   events: SimEvent[];
+  waypoints: { id: number; x: number; y: number }[];
 }

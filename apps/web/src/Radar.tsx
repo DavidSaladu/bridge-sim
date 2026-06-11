@@ -12,11 +12,12 @@ interface Props {
   size: number;
   onSetHeading?: (deg: number) => void;
   onSelectEntity?: (id: number | null) => void;
+  onClickWorld?: (x: number, y: number) => void;
   targetId?: number | null;
   events?: TimedEvent[];
 }
 
-export function Radar({ snap, range, size, onSetHeading, onSelectEntity, targetId, events }: Props) {
+export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClickWorld, targetId, events }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -128,6 +129,22 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, targetI
       }
     }
 
+    // Waypoints: rombos amarillos numerados
+    snap.waypoints?.forEach((w, i) => {
+      const pt = toScreen(w.x, w.y);
+      if (!pt) return;
+      const [sx, sy] = pt;
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate(Math.PI / 4);
+      ctx.strokeStyle = "#facc15";
+      ctx.strokeRect(-4, -4, 8, 8);
+      ctx.restore();
+      ctx.fillStyle = "#facc15";
+      ctx.font = "10px monospace";
+      ctx.fillText("W" + (i + 1), sx + 7, sy - 6);
+    });
+
     const tr = (ship.targetHeading * Math.PI) / 180;
     ctx.strokeStyle = "rgba(250,204,21,0.8)";
     ctx.setLineDash([4, 4]);
@@ -143,6 +160,11 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, targetI
     const px = ev.clientX - rect.left - size / 2;
     const py = ev.clientY - rect.top - size / 2;
 
+    if (onClickWorld) {
+      const scale = size / 2 / range;
+      onClickWorld(snap.ship.x + px / scale, snap.ship.y - py / scale);
+      return;
+    }
     if (onSelectEntity) {
       // Buscar la nave más cercana al clic (en coordenadas de pantalla)
       const scale = size / 2 / range;
@@ -169,7 +191,7 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, targetI
       width={size}
       height={size}
       onClick={handleClick}
-      style={{ cursor: onSetHeading || onSelectEntity ? "crosshair" : "default", touchAction: "manipulation" }}
+      style={{ cursor: onSetHeading || onSelectEntity || onClickWorld ? "crosshair" : "default", touchAction: "manipulation" }}
     />
   );
 }

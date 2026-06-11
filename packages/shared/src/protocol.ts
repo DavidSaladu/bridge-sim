@@ -104,11 +104,18 @@ export type SnapEvent =
   | { k: "boom"; x: number; y: number; big: boolean }
   | { k: "launch"; x: number; y: number };
 
+export interface Waypoint {
+  id: number;
+  x: number;
+  y: number;
+}
+
 export interface GameSnap {
   time: number;
   ship: SnapShip;
   entities: SnapEntity[];
   events: SnapEvent[];
+  waypoints: Waypoint[];
 }
 
 /** Mensajes cliente → servidor */
@@ -128,7 +135,12 @@ export type ClientMsg =
   | { t: "engineering"; cmd: "setCoolant"; system: ShipSystem; value: number }
   | { t: "engineering"; cmd: "repair"; system: ShipSystem | null }
   | { t: "science"; cmd: "scan"; id: number }
-  | { t: "science"; cmd: "cancelScan" };
+  | { t: "science"; cmd: "cancelScan" }
+  | { t: "comms"; cmd: "addWaypoint"; x: number; y: number }
+  | { t: "comms"; cmd: "removeWaypoint"; id: number }
+  | { t: "comms"; cmd: "hail"; id: number }
+  | { t: "comms"; cmd: "choose"; index: number }
+  | { t: "comms"; cmd: "closeChannel" };
 
 /** Mensajes servidor → cliente */
 export type ServerMsg =
@@ -137,7 +149,8 @@ export type ServerMsg =
   | { t: "chat"; from: string; fromName: string; text: string; ts: number }
   | { t: "error"; code: string; message: string }
   | { t: "snap"; snap: GameSnap }
-  | { t: "gameOver"; victory: boolean; message: string };
+  | { t: "gameOver"; victory: boolean; message: string }
+  | { t: "commsChannel"; channel: { callSign: string; text: string; options: string[] } | null };
 
 export const ROOM_CODE_LENGTH = 6;
 export const MAX_PLAYERS = 6;
