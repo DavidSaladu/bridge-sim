@@ -19,6 +19,8 @@ export interface TubeSim {
   t: number;
 }
 
+import type { SystemName, SystemState } from "./systems.js";
+
 export interface PlayerShipState {
   x: number;
   y: number;
@@ -35,6 +37,10 @@ export interface PlayerShipState {
   targetId: number | null;
   tubes: { state: TubeStateSim; progress: number }[];
   beamCooldown: number;
+  energy: number;
+  energyMax: number;
+  repairing: SystemName | null;
+  systems: Record<SystemName, SystemState>;
 }
 
 export type SimEvent =

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Viewport3D } from "./Viewport3D.js";
 import type { TimedEvent } from "./Radar.js";
-import type { GameSnap, Station } from "@bridge/shared";
-import { STATION_LABELS } from "@bridge/shared";
+import type { GameSnap, ShipSystem, Station } from "@bridge/shared";
+import { SHIP_SYSTEMS, STATION_LABELS, SYSTEM_LABELS } from "@bridge/shared";
 import { Radar } from "./Radar.js";
 
 interface Props {
@@ -19,6 +19,8 @@ export function StationView({ station, snap, send, events }: Props) {
       return <HelmView snap={snap} send={send} events={events} />;
     case "weapons":
       return <WeaponsView snap={snap} send={send} events={events} />;
+    case "engineering":
+      return <EngineeringView snap={snap} send={send} />;
     case "captain":
       return <CaptainView snap={snap} events={events} />;
     default:
@@ -104,6 +106,97 @@ function WeaponsView({ snap, send, events }: { snap: GameSnap; send: (m: object)
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function EngineeringView({ snap, send }: { snap: GameSnap; send: (m: object) => void }) {
+  const { ship } = snap;
+  const coolantUsed = SHIP_SYSTEMS.reduce((sum, n) => sum + ship.systems[n].coolant, 0);
+  return (
+    <div className="row" style={{ alignItems: "flex-start", gap: "1.5rem" }}>
+      <div className="panel" style={{ flex: 2, minWidth: 480 }}>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <h3 style={{ margin: 0, color: "var(--accent)" }}>Ingeniería</h3>
+          <span>
+            ⚡ <b style={{ color: ship.energy < 200 ? "#f87171" : "#4ade80" }}>{ship.energy}</b>
+            <span className="muted">/{ship.energyMax}</span>
+            <span className="muted" style={{ marginLeft: "1rem" }}>❄ refrigerante {coolantUsed}/10</span>
+          </span>
+        </div>
+        <table style={{ width: "100%", fontSize: "0.85rem", marginTop: "0.75rem", borderSpacing: "0 0.4rem", borderCollapse: "separate" }}>
+          <thead>
+            <tr className="muted" style={{ textAlign: "left" }}>
+              <th>Sistema</th><th style={{ width: "26%" }}>Potencia</th><th style={{ width: 70 }}></th>
+              <th style={{ width: "14%" }}>Refrig.</th><th style={{ width: "15%" }}>Calor</th>
+              <th style={{ width: "15%" }}>Estado</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {SHIP_SYSTEMS.map((name) => {
+              const sys = ship.systems[name];
+              const hot = sys.heat > 0.7;
+              return (
+                <tr key={name}>
+                  <td style={{ color: sys.health < 0.5 ? "#f87171" : undefined }}>{SYSTEM_LABELS[name]}</td>
+                  <td>
+                    <input
+                      type="range" min={0} max={300} step={10}
+                      value={Math.round(sys.power * 100)}
+                      onChange={(e) => send({ t: "engineering", cmd: "setPower", system: name, value: Number(e.target.value) / 100 })}
+                      style={{ width: "100%" }}
+                    />
+                  </td>
+                  <td style={{ color: sys.power > 1 ? "#facc15" : undefined }}>{Math.round(sys.power * 100)}%</td>
+                  <td>
+                    <div className="row" style={{ gap: "0.25rem" }}>
+                      <button style={{ padding: "0 0.4rem" }} onClick={() => send({ t: "engineering", cmd: "setCoolant", system: name, value: sys.coolant - 1 })}>−</button>
+                      <span style={{ minWidth: 16, textAlign: "center" }}>{sys.coolant}</span>
+                      <button style={{ padding: "0 0.4rem" }} onClick={() => send({ t: "engineering", cmd: "setCoolant", system: name, value: sys.coolant + 1 })}>+</button>
+                    </div>
+                  </td>
+                  <td><MiniBar frac={sys.heat} color={hot ? "#f87171" : "#fb923c"} blink={sys.heat > 0.9} /></td>
+                  <td><MiniBar frac={sys.health} color={sys.health < 0.5 ? "#f87171" : "#4ade80"} /></td>
+                  <td>
+                    <button
+                      style={{
+                        padding: "0.1rem 0.45rem", fontSize: "0.75rem",
+                        background: ship.repairing === name ? "var(--accent)" : undefined,
+                        color: ship.repairing === name ? "#082f49" : undefined,
+                      }}
+                      onClick={() => send({ t: "engineering", cmd: "repair", system: ship.repairing === name ? null : name })}
+                      title="Equipo de reparación"
+                    >
+                      🔧
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <p className="muted" style={{ fontSize: "0.78rem", marginBottom: 0 }}>
+          Potencia &gt;100% acelera el sistema pero genera calor: asigna refrigerante o se dañará.
+          El 🔧 pone al equipo de reparación en ese sistema.
+        </p>
+      </div>
+      <div style={{ flex: 1, minWidth: 220, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        <Viewport3D snap={snap} height={150} />
+        <div className="panel">
+          <h4 style={{ margin: "0 0 0.4rem", color: "var(--accent)" }}>Nave</h4>
+          <Bar label={`Casco ${Math.round(ship.hull)}/${ship.hullMax}`} frac={ship.hull / ship.hullMax} color="#f87171" />
+          <Bar label={`Escudo proa ${ship.shieldFront}`} frac={ship.shieldFront / ship.shieldMax} color="#38bdf8" />
+          <Bar label={`Escudo popa ${ship.shieldRear}`} frac={ship.shieldRear / ship.shieldMax} color="#38bdf8" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniBar({ frac, color, blink }: { frac: number; color: string; blink?: boolean }) {
+  return (
+    <div style={{ background: "#1e293b", borderRadius: 3, height: 10, animation: blink ? "pulse 0.6s infinite alternate" : undefined }}>
+      <div style={{ width: `${Math.max(0, Math.min(100, frac * 100))}%`, background: color, height: 10, borderRadius: 3 }} />
     </div>
   );
 }

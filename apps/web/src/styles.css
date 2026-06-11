@@ -69,3 +69,4 @@ input {
 }
 .muted { color: var(--text-dim); font-size: 0.85rem; }
 .station.speaking { border-color: #4ade80; box-shadow: 0 0 14px rgba(74, 222, 128, 0.45); }
+@keyframes pulse { from { outline: 1px solid rgba(248,113,113,0); } to { outline: 1px solid rgba(248,113,113,0.9); } }

@@ -49,6 +49,25 @@ export interface SnapEntity {
   shieldFrac?: number;
 }
 
+export const SHIP_SYSTEMS = ["reactor", "beams", "missiles", "maneuver", "impulse", "shields"] as const;
+export type ShipSystem = (typeof SHIP_SYSTEMS)[number];
+
+export const SYSTEM_LABELS: Record<ShipSystem, string> = {
+  reactor: "Reactor",
+  beams: "Rayos",
+  missiles: "Misiles",
+  maneuver: "Maniobra",
+  impulse: "Impulso",
+  shields: "Escudos",
+};
+
+export interface SnapSystem {
+  power: number;    // potencia objetivo 0..3
+  coolant: number;  // refrigerante asignado 0..10
+  heat: number;     // 0..1
+  health: number;   // 0..1
+}
+
 export type TubeState = "empty" | "loading" | "loaded";
 
 export interface SnapTube {
@@ -72,6 +91,10 @@ export interface SnapShip {
   targetId: number | null;
   tubes: SnapTube[];
   beamCooldown: number;
+  energy: number;
+  energyMax: number;
+  systems: Record<ShipSystem, SnapSystem>;
+  repairing: ShipSystem | null;
 }
 
 export type SnapEvent =
@@ -98,7 +121,10 @@ export type ClientMsg =
   | { t: "weapons"; cmd: "setTarget"; id: number | null }
   | { t: "weapons"; cmd: "loadTube"; tube: number }
   | { t: "weapons"; cmd: "fireTube"; tube: number }
-  | { t: "weapons"; cmd: "shields"; up: boolean };
+  | { t: "weapons"; cmd: "shields"; up: boolean }
+  | { t: "engineering"; cmd: "setPower"; system: ShipSystem; value: number }
+  | { t: "engineering"; cmd: "setCoolant"; system: ShipSystem; value: number }
+  | { t: "engineering"; cmd: "repair"; system: ShipSystem | null };
 
 /** Mensajes servidor → cliente */
 export type ServerMsg =

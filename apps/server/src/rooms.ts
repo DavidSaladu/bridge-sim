@@ -187,6 +187,26 @@ export class Room {
         if (msg.cmd === "setHeading" && typeof msg.value === "number") ship.setTargetHeading(msg.value);
         break;
       }
+      case "engineering": {
+        if (!player.stations.includes("engineering")) {
+          player.outbox?.send({ t: "error", code: "wrong_station", message: "No estás en Ingeniería" });
+          return;
+        }
+        const eng = this.world?.ship.engineering;
+        if (!eng) return;
+        switch (msg.cmd) {
+          case "setPower":
+            if (typeof msg.value === "number") eng.setPower(msg.system, msg.value);
+            break;
+          case "setCoolant":
+            if (typeof msg.value === "number") eng.setCoolant(msg.system, msg.value);
+            break;
+          case "repair":
+            eng.setRepair(msg.system);
+            break;
+        }
+        break;
+      }
       case "weapons": {
         if (!player.stations.includes("weapons")) {
           player.outbox?.send({ t: "error", code: "wrong_station", message: "No estás en Armamento" });

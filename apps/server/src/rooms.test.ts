@@ -209,3 +209,27 @@ describe("Host con StrictMode (conexión doble)", () => {
     expect(snap.players.filter((p) => p.isHost)).toHaveLength(1);
   });
 });
+
+describe("Ingeniería", () => {
+  it("los comandos solo valen desde Ingeniería y modifican los sistemas", () => {
+    const room = new RoomManager().create();
+    const b = fakeOutbox();
+    const r = room.join("Ing", b);
+    if (!r.ok) throw new Error("join failed");
+    room.handleMessage(r.id, { t: "startGame" });
+
+    room.handleMessage(r.id, { t: "engineering", cmd: "setPower", system: "impulse", value: 3 });
+    expect(b.msgs.some((m) => m.t === "error" && m.code === "wrong_station")).toBe(true);
+    expect(room.world?.ship.engineering.systems.impulse.power).toBe(1);
+
+    room.handleMessage(r.id, { t: "takeStation", station: "engineering" });
+    room.handleMessage(r.id, { t: "engineering", cmd: "setPower", system: "impulse", value: 3 });
+    room.handleMessage(r.id, { t: "engineering", cmd: "setCoolant", system: "impulse", value: 5 });
+    room.handleMessage(r.id, { t: "engineering", cmd: "repair", system: "impulse" });
+    const eng = room.world!.ship.engineering;
+    expect(eng.systems.impulse.power).toBe(3);
+    expect(eng.systems.impulse.coolant).toBe(5);
+    expect(eng.repairing).toBe("impulse");
+    room.stop();
+  });
+});

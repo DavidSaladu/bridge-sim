@@ -1,4 +1,5 @@
 import type { EntityKind, EntityState, PlayerShipState, WorldSnapshot, SimEvent, TubeSim } from "./types.js";
+import { EngineeringSuite } from "./systems.js";
 
 /** RNG determinista (mulberry32) para escenarios reproducibles. */
 export function makeRng(seed: number): () => number {
@@ -99,6 +100,7 @@ abstract class MovingShip extends Entity {
 
 export class PlayerShip extends MovingShip {
   callSign: string;
+  engineering = new EngineeringSuite();
   shieldsUp = true;
   shieldMax = 100;
   shieldFront = 100;
@@ -145,16 +147,29 @@ export class PlayerShip extends MovingShip {
   }
 
   override update(dt: number, world: World): void {
+    this.engineering.tick(dt);
+    // Eficacias de ingeniería: ajustan specs efectivos antes de mover
+    const baseSpec = this.spec;
+    const effImpulse = this.engineering.effectiveness("impulse");
+    const effManeuver = this.engineering.effectiveness("maneuver");
+    this.spec = {
+      ...baseSpec,
+      maxSpeed: baseSpec.maxSpeed * Math.min(1.5, effImpulse),
+      turnRate: baseSpec.turnRate * Math.min(1.5, effManeuver),
+    };
     super.update(dt);
+    this.spec = baseSpec;
     // Escudos: recarga lenta si están arriba
     if (this.shieldsUp) {
-      this.shieldFront = Math.min(this.shieldMax, this.shieldFront + 1.2 * dt);
-      this.shieldRear = Math.min(this.shieldMax, this.shieldRear + 1.2 * dt);
+      const effShields = Math.min(2, this.engineering.effectiveness("shields"));
+      this.shieldFront = Math.min(this.shieldMax, this.shieldFront + 1.2 * effShields * dt);
+      this.shieldRear = Math.min(this.shieldMax, this.shieldRear + 1.2 * effShields * dt);
     }
     // Tubos
+    const effMissiles = Math.max(0.1, Math.min(2, this.engineering.effectiveness("missiles")));
     for (const tube of this.tubes) {
       if (tube.state === "loading") {
-        tube.t += dt;
+        tube.t += dt * effMissiles;
         if (tube.t >= TUBE_LOAD_TIME) {
           tube.state = "loaded";
           tube.t = TUBE_LOAD_TIME;
@@ -162,7 +177,8 @@ export class PlayerShip extends MovingShip {
       }
     }
     // Rayos automáticos contra el blanco seleccionado
-    this.beamCd = Math.max(0, this.beamCd - dt);
+    const effBeams = Math.max(0.1, Math.min(2, this.engineering.effectiveness("beams")));
+    this.beamCd = Math.max(0, this.beamCd - dt * effBeams);
     if (this.targetId != null && this.beamCd <= 0) {
       const target = world.get(this.targetId);
       if (target && target instanceof MovingShip && dist(this, target) <= PLAYER_BEAM.range) {
@@ -186,7 +202,11 @@ export class PlayerShip extends MovingShip {
       this[pool] -= absorbed;
       dmg -= absorbed;
     }
-    if (dmg > 0) this.hull = Math.max(0, this.hull - dmg);
+    if (dmg > 0) {
+      this.hull = Math.max(0, this.hull - dmg);
+      // Los impactos al casco averían sistemas (40% de probabilidad)
+      if (world.rng() < 0.4) this.engineering.damageRandomSystem(0.1 + world.rng() * 0.1, world.rng);
+    }
     if (this.hull <= 0 && !this.dead) {
       this.dead = true;
       world.events.push({ k: "boom", x: this.x, y: this.y, big: true });
@@ -209,6 +229,7 @@ export class PlayerShip extends MovingShip {
         progress: t.state === "loading" ? t.t / TUBE_LOAD_TIME : t.state === "loaded" ? 1 : 0,
       })),
       beamCooldown: this.beamCd / PLAYER_BEAM.cycle,
+      ...this.engineering.snapshot(),
     };
   }
 
