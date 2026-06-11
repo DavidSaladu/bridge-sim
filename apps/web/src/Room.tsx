@@ -10,33 +10,58 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
   const [chat, setChat] = useState<ChatLine[]>([]);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
+  const [status, setStatus] = useState<"connecting" | "connected" | "reconnecting">("connecting");
   const wsRef = useRef<WebSocket | null>(null);
+  const resumeKeyRef = useRef<string | null>(sessionStorage.getItem(`resume:${code}`));
+  const closedByUser = useRef(false);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/ws/rooms/${code}?name=${encodeURIComponent(name)}`);
-    wsRef.current = ws;
-    ws.onmessage = (ev) => {
-      const msg: ServerMsg = JSON.parse(ev.data);
-      switch (msg.t) {
-        case "welcome":
-          setSelfId(msg.selfId);
-          setRoom(msg.room);
-          break;
-        case "room":
-          setRoom(msg.room);
-          break;
-        case "chat":
-          setChat((c) => [...c.slice(-200), { fromName: msg.fromName, text: msg.text, ts: msg.ts }]);
-          break;
-        case "error":
-          setError(msg.message);
-          break;
-      }
+    closedByUser.current = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    function connect() {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const params = new URLSearchParams({ name });
+      if (resumeKeyRef.current) params.set("resume", resumeKeyRef.current);
+      const ws = new WebSocket(`${proto}://${location.host}/ws/rooms/${code}?${params}`);
+      wsRef.current = ws;
+
+      ws.onopen = () => setStatus("connected");
+      ws.onmessage = (ev) => {
+        const msg: ServerMsg = JSON.parse(ev.data);
+        switch (msg.t) {
+          case "welcome":
+            setSelfId(msg.selfId);
+            resumeKeyRef.current = msg.resumeKey;
+            sessionStorage.setItem(`resume:${code}`, msg.resumeKey);
+            setRoom(msg.room);
+            setError("");
+            break;
+          case "room":
+            setRoom(msg.room);
+            break;
+          case "chat":
+            setChat((c) => [...c.slice(-200), { fromName: msg.fromName, text: msg.text, ts: msg.ts }]);
+            break;
+          case "error":
+            setError(msg.message);
+            break;
+        }
+      };
+      ws.onclose = () => {
+        if (closedByUser.current) return;
+        setStatus("reconnecting");
+        retryTimer = setTimeout(connect, 1500);
+      };
+    }
+
+    connect();
+    return () => {
+      closedByUser.current = true;
+      clearTimeout(retryTimer);
+      wsRef.current?.close();
     };
-    ws.onclose = () => setError("Desconectado del servidor");
-    return () => ws.close();
   }, [code, name]);
 
   useEffect(() => {
@@ -46,7 +71,7 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
   const me = room?.players.find((p) => p.id === selfId);
 
   function send(msg: object) {
-    wsRef.current?.send(JSON.stringify(msg));
+    if (wsRef.current?.readyState === 1) wsRef.current.send(JSON.stringify(msg));
   }
 
   function toggleStation(station: Station) {
@@ -61,12 +86,21 @@ export function Room({ code, name, onLeave }: { code: string; name: string; onLe
     setDraft("");
   }
 
+  function leave() {
+    closedByUser.current = true;
+    sessionStorage.removeItem(`resume:${code}`);
+    wsRef.current?.close();
+    onLeave();
+  }
+
   return (
     <div>
       <div className="row" style={{ justifyContent: "space-between", marginBottom: "1rem" }}>
         <span className="code-badge">{code}</span>
-        <span className="muted">{room?.players.filter((p) => p.connected).length ?? 0}/6 a bordo</span>
-        <button onClick={onLeave}>Salir</button>
+        <span className="muted">
+          {status === "reconnecting" ? "⟳ Reconectando…" : `${room?.players.filter((p) => p.connected).length ?? 0}/6 a bordo`}
+        </span>
+        <button onClick={leave}>Salir</button>
       </div>
 
       <div className="stations">

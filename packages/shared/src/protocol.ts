@@ -42,7 +42,7 @@ export type ClientMsg =
 
 /** Mensajes servidor → cliente */
 export type ServerMsg =
-  | { t: "welcome"; selfId: string; room: RoomSnapshot }
+  | { t: "welcome"; selfId: string; resumeKey: string; room: RoomSnapshot }
   | { t: "room"; room: RoomSnapshot }
   | { t: "chat"; from: string; fromName: string; text: string; ts: number }
   | { t: "error"; code: string; message: string };

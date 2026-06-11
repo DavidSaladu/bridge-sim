@@ -19,6 +19,7 @@ export interface Outbox {
 interface Player extends PlayerInfo {
   outbox: Outbox | null;
   disconnectedAt: number | null;
+  resumeKey: string;
 }
 
 const RECONNECT_GRACE_MS = 5 * 60 * 1000;
@@ -53,6 +54,7 @@ export class Room {
     if (active >= MAX_PLAYERS) return { ok: false, error: "Sala llena" };
 
     const id = genId();
+    const resumeKey = genId() + genId();
     const player: Player = {
       id,
       name: cleanName,
@@ -61,11 +63,25 @@ export class Room {
       connected: true,
       outbox,
       disconnectedAt: null,
+      resumeKey,
     };
     this.players.set(id, player);
-    outbox.send({ t: "welcome", selfId: id, room: this.snapshot() });
+    outbox.send({ t: "welcome", selfId: id, resumeKey, room: this.snapshot() });
     this.broadcastRoom(id);
     return { ok: true, id };
+  }
+
+  /** Reconecta a un jugador existente usando su resumeKey. */
+  resume(resumeKey: string, outbox: Outbox): { ok: true; id: string } | { ok: false; error: string } {
+    const player = [...this.players.values()].find((p) => p.resumeKey === resumeKey);
+    if (!player) return { ok: false, error: "Sesión expirada" };
+    player.outbox?.close();
+    player.outbox = outbox;
+    player.connected = true;
+    player.disconnectedAt = null;
+    outbox.send({ t: "welcome", selfId: player.id, resumeKey, room: this.snapshot() });
+    this.broadcastRoom(player.id);
+    return { ok: true, id: player.id };
   }
 
   handleMessage(playerId: string, msg: ClientMsg): void {

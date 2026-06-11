@@ -30,12 +30,13 @@ async function main(): Promise<void> {
     return room.snapshot();
   });
 
-  app.get<{ Params: { code: string }; Querystring: { name?: string } }>(
+  app.get<{ Params: { code: string }; Querystring: { name?: string; resume?: string } }>(
     "/ws/rooms/:code",
     { websocket: true },
     (socket, req) => {
       const room = manager.get(req.params.code);
       const name = req.query.name ?? "";
+      const resume = req.query.resume;
       if (!room) {
         socket.send(JSON.stringify({ t: "error", code: "not_found", message: "Sala no encontrada" }));
         socket.close();
@@ -45,7 +46,8 @@ async function main(): Promise<void> {
         send: (msg) => socket.readyState === 1 && socket.send(JSON.stringify(msg)),
         close: () => socket.close(),
       };
-      const res = room.join(name, outbox);
+      let res = resume ? room.resume(resume, outbox) : null;
+      if (!res || !res.ok) res = room.join(name, outbox);
       if (!res.ok) {
         socket.send(JSON.stringify({ t: "error", code: "join_failed", message: res.error }));
         socket.close();
@@ -61,7 +63,14 @@ async function main(): Promise<void> {
         }
         room.handleMessage(playerId, msg);
       });
-      socket.on("close", () => room.disconnect(playerId));
+      // Heartbeat: evita que el proxy corte la conexión por inactividad
+      const heartbeat = setInterval(() => {
+        if (socket.readyState === 1) socket.ping();
+      }, 25_000);
+      socket.on("close", () => {
+        clearInterval(heartbeat);
+        room.disconnect(playerId);
+      });
     },
   );
 

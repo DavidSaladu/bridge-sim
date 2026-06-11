@@ -70,3 +70,31 @@ describe("RoomManager", () => {
     vi.useRealTimers();
   });
 });
+
+describe("Reconexión", () => {
+  it("resume devuelve la misma identidad y conserva el puesto", () => {
+    const room = new RoomManager().create();
+    const b1 = fakeOutbox();
+    const r1 = room.join("Ana", b1);
+    if (!r1.ok) throw new Error("join failed");
+    const welcome = b1.msgs.find((m) => m.t === "welcome");
+    if (!welcome || welcome.t !== "welcome") throw new Error("no welcome");
+    room.handleMessage(r1.id, { t: "takeStation", station: "science" });
+    room.disconnect(r1.id);
+
+    const b2 = fakeOutbox();
+    const r2 = room.resume(welcome.resumeKey, b2);
+    expect(r2.ok).toBe(true);
+    if (!r2.ok) return;
+    expect(r2.id).toBe(r1.id);
+    const snap = room.snapshot();
+    expect(snap.players).toHaveLength(1);
+    expect(snap.players[0]?.station).toBe("science");
+    expect(snap.players[0]?.connected).toBe(true);
+  });
+
+  it("resume con clave inválida falla", () => {
+    const room = new RoomManager().create();
+    expect(room.resume("clave-falsa", fakeOutbox()).ok).toBe(false);
+  });
+});
