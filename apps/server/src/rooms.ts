@@ -214,6 +214,14 @@ export class Room {
     player.connected = false;
     player.outbox = null;
     player.disconnectedAt = Date.now();
+    // El host no puede ser un desconectado: traspaso inmediato
+    if (player.isHost) {
+      const next = [...this.players.values()].find((p) => p.connected);
+      if (next) {
+        player.isHost = false;
+        next.isHost = true;
+      }
+    }
     this.broadcastRoom();
   }
 

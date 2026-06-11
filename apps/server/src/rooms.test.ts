@@ -182,3 +182,16 @@ describe("Armas y fin de partida", () => {
     expect(room.world).toBeNull();
   });
 });
+
+describe("Traspaso de host", () => {
+  it("si el host se desconecta, el rol pasa al primer jugador conectado", () => {
+    const room = new RoomManager().create();
+    const r1 = room.join("A", fakeOutbox());
+    const r2 = room.join("B", fakeOutbox());
+    if (!r1.ok || !r2.ok) throw new Error("join failed");
+    room.disconnect(r1.id);
+    const snap = room.snapshot();
+    expect(snap.players.find((p) => p.id === r2.id)?.isHost).toBe(true);
+    expect(snap.players.find((p) => p.id === r1.id)?.isHost).toBe(false);
+  });
+});
