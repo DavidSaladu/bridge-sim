@@ -1,0 +1,287 @@
+================================================================================
+EMPTY EPSILON CREW6 CONSOLES - QUICK REFERENCE GUIDE
+================================================================================
+
+SCREEN DIMENSIONS: 1200×900 (virtual units)
+
+================================================================================
+1. HELMS SCREEN
+================================================================================
+
+LAYOUT:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Energy/Heading/Velocity (240×40 each) ┌─────────────────────────────────────┤
+│                                        │ Custom Ship Functions (250×?)       │
+│                   ◯ RADAR (800h)       │                                     │
+│                 (CIRCULAR, SR)         │                                     │
+│                Centered                └─────────────────────────────────────┤
+│                                        ┌─────────────────────────────────────┤
+│  Docking (280×50)  │ Combat (280×215)  │ Combat Maneuver Charge             │
+│  IF DockingPort    │ Maneuver Panel    │ Strafe/Boost 2D (280×165)          │
+│                    │ BottomRight       │ Power+Damage indicators            │
+│                    │                   └─────────────────────────────────────┘
+│ Impulse │ Warp │ Jump (100 each, 300h total)
+└─────────────────────────────────────────────────────────────────────────────┘
+
+WIDGETS:
+- Radar: Circular, short-range (5000u), ghost dots, waypoints, heading indicators
+- Impulse: Vertical slider −100% to +100%, snap to 0.0±0.1
+- Warp: Vertical slider 0-N levels (integer snap)
+- Combat Maneuver: 2D snap slider (strafe X, boost Y both −1.0 to +1.0)
+- Docking: Show/hide based on DockingPort component
+
+INTERACTIONS:
+- Click+Drag Radar: heading_hint floats, commandTargetRotation() continuously
+- Keybinds: helms_turn_left/right (±5°/frame), combat_left/right, combat_boost
+
+PREFERENCES:
+- helms_radar_lock: "0"=relative, "1"=north-up
+
+================================================================================
+2. WEAPONS SCREEN
+================================================================================
+
+LAYOUT:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Energy/Front Shield/Rear Shield        ┌─────────────────────────────────────┤
+│ (240×40 each) TopLeft                  │ Custom Ship Functions               │
+│                                        │                                     │
+│              ◯ RADAR (800h)           ╱╱╱ AIM DIAL (850h) ╱╱╱              │
+│            (CIRCULAR, SR)              │ (IF manual aim+tubes)               │
+│           + Aim Lock Dial              └─────────────────────────────────────┤
+│          (IF manual aim ON)             Lock Aim Button (130×50) TopCenter   │
+│                                        │                                     │
+│  Missile Tubes (full)                  ┌─────────────────────────────────────┤
+│  - Type selector (Homing/Mine/etc)     │ Beam Frequency (IF enabled)         │
+│  - Tube rows × N (Load/Fire buttons)   │ Beam Target System (IF damage on)   │
+│  - Loading bars                        │ Shields Enable/Frequency            │
+│                                        │ (280×100 or 280×50)                 │
+│                                        └─────────────────────────────────────┘
+└─────────────────────────────────────────────────────────────────────────────┘
+
+WIDGETS:
+- Radar: Circular, short-range, target tracking, projections, tube indicators
+- AimLock: GuiRotationDial −90° to 270°, overlay on radar, red line
+- Missile Tubes: Per-tube Load/Fire, loading bar, unload state
+- Frequency Selectors: Dropdown 0-16 (beam frequency, shield frequency)
+- System Targeting: Hull or specific system (Reactor, Shields, etc.)
+
+INTERACTIONS:
+- Click Radar: targets.setToClosestTo(250u) → commandSetTarget()
+- Manual Aim: Dial rotates with radar, keybind weapons_aim_left/right (±5°/frame)
+- Frequency Cycling: weapons_beam_frequency_increase/decrease (circular 0-16)
+
+ALERTS:
+- Power ≤ 0: Fire button disabled
+- Warp active: Fire button disabled
+- System health ≤ 0: Load button disabled
+
+================================================================================
+3. ENGINEERING SCREEN
+================================================================================
+
+LAYOUT:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Energy/Hull/Shields/Coolant            ┌─────────────────────────────────────┤
+│ Self Destruct (240×100) TopLeft        │ Custom Ship Functions               │
+│                                        │                                     │
+│                                        │                                     │
+│  SYSTEM ROWS (each 50h):               ┌──────────────────────┐              │
+│  [Selector] [Damage%] [Heat+Arrow] [P] [C]   (horizontal)     │              │
+│  [Reactor ]  [███  ] [░░░░↑    ] [===][===]                   │              │
+│  [Beam    ]  [█████] [░░░↓     ] [===][===]                   │              │
+│  ...etc (9 systems)                    │ Power Slider (270×360) Large       │
+│                                        │ Coolant Slider (270×360) Large     │
+│  SHIP INTERNAL VIEW (grid of rooms)    │ System Effects (270×400)           │
+│  Click room = select system            │                                    │
+│                                        └──────────────────────┘
+└─────────────────────────────────────────────────────────────────────────────┘
+
+WIDGETS:
+- System Selector Buttons: Toggle, select active system
+- Damage Bar: 0-100%, green→red gradient, skull icon if damaged
+- Heat Bar+Arrow: Blue bar, arrow up (red=heating) or down (blue=cooling)
+- Power Slider: 0-3.0 (overclock 300% if reactor), snap {0, 0.5, 1, 1.5, 2, 2.5, 3}
+- Coolant Slider: 0-10.0 per system, snap {0, 2.5, 5, 7.5, 10}
+- Coolant Remaining: Redistribute pool across systems
+- Ship Internal View: Clickable room grid (room_size 48px)
+
+INTERACTIONS:
+- Click System Button: Enable Power/Coolant sliders
+- Drag Power Slider: commandSetSystemPowerRequest(system, value)
+- Drag Coolant Slider: commandSetSystemCoolantRequest(system, value)
+- Drag Coolant Remaining: Proportional drain/distribution across all systems
+
+KEYBINDS:
+- engineering_select_system[n]: Direct select system 0-9
+- engineering_set_power_000/030/050/100/150/200/250/300: Direct hotkeys
+- engineering_increase_power/decrease_power: ±0.1/frame
+- engineering_increase_coolant/decrease_coolant: ±0.5/frame
+
+SPECIAL:
+- If no Reactor/Coolant: power max = 1.0 (100% only)
+- Heat visualization: Bar color green (0%) → red (100%), icon flashes if >90%
+- Damage visualization: Red bar for health <100%, skull icon, % label
+
+================================================================================
+4. SCIENCE SCREEN
+================================================================================
+
+LAYOUT:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Sidebar Selector (250×50) TopRight     Radar/Database Toggle (200×100)     │
+│ ┌────────────────────────────────────┐ Zoom Slider (250×50) BottomRight    │
+│ │ SIDEBAR (250×Max) [Scanning/Other] │                                      │
+│ │ • Scan Button (250×50)             ┌──────────────────────────────────────┤
+│ │ • Callsign / Distance / Bearing    │          RADAR CONTAINER             │
+│ │ • Rel Speed / Faction / Type       │    ◯ SCIENCE RADAR (900×Max)        │
+│ │ • Shields / Hull                   │   (CIRCULAR, LR, fog nebula)         │
+│ │ [Pager: Tactical/Systems/Desc]     │    ◯ PROBE RADAR (HIDDEN)            │
+│ │ • Frequency graphs (if FullScan)   │   (CIRCULAR, probe-centered)        │
+│ │ • System status (if FullScan)      │                                      │
+│ │ • Description (if available)       │ Probe View Button (200×50) BottomLeft│
+│ │                                    │                                      │
+│ │ [Database View - HIDDEN by default]│                                      │
+│ │ Searchable ship database           │                                      │
+│ └────────────────────────────────────┘ Scanning Dialog Modal (progress)   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+WIDGETS:
+- Science Radar: Circular long-range, fog of war (nebula), waypoints enabled
+- Probe Radar: Hidden, probe-centered, no FOW, manual pan
+- Sidebar: Scan button, 8 KeyValue displays, pager (Tactical/Systems/Description)
+- Frequency Graphs: Shield damage vs frequency, beam effectiveness vs frequency
+- Database: Hierarchical navigator (Main → Categories → Items)
+- Zoom Slider: short_range to long_range, label "1.0x" to "X.Xx"
+
+INTERACTIONS:
+- Click Radar: If scanner delay > 0: ignore. Else: targets.setToClosestTo(1000u)
+- Scroll Radar: doRadarZoom(value) → distance *= (1.0 - value×0.1)
+- Probe Toggle: Switch between science/probe radars
+- Database "DB" button: Auto-navigate to target entry
+
+KEYBINDS:
+- science_scan_object: Initiate scan (if delay=0)
+- science_select_next_scannable: Cycle to next scannable entity
+
+SCAN STATES:
+- NotScanned (gray): "?" + not_scanned description
+- FriendOrFoeIdentified (yellow): Faction only
+- SimpleScan (green): Type, shields, hull, faction
+- FullScan (blue): All + systems + frequencies + description
+
+RESPONSIVE:
+- If screen.width < 1435px: Sidebar selector shows, tabs toggle visibility
+- If screen.width >= 1435px: Both sidebars visible simultaneously
+
+================================================================================
+5. RELAY SCREEN
+================================================================================
+
+LAYOUT:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ┌─────────────────────────────────────────────────────────────────────────┐ │
+│ │                                                                         │ │
+│ │  RADAR (RECTANGULAR, long-range, full screen)                          │ │
+│ │  Pan manual (no auto-center default)                                    │ │
+│ │  Fog of War: Friendlys short-range only                                │ │
+│ │  Waypoints: Click <1000u to drag                                       │ │
+│ │                                                                         │ │
+│ │  Sidebar (250×Max):        Option Buttons (250×Max):                   │ │
+│ │  • Callsign               • Open Comms (250×50)                        │ │
+│ │  • Faction                • Hack Target (250×50)                       │ │
+│ │                           • Link to Science (250×50)                   │ │
+│ │                           • Place Waypoint (250×50)                    │ │
+│ │                           • Delete Waypoint (250×50)                   │ │
+│ │                           • Launch Probe (250×50)                      │ │
+│ │                           • Center on Ship (250×50)                    │ │
+│ │                           • Reputation (250×40)                        │ │
+│ │                           • Clock (250×40)                             │ │
+│ │ Zoom Slider (250×50)       Alert Level Select (300×?) BottomRight      │ │
+│ │ BottomLeft                                                              │ │
+│ │                            Hacking Dialog (modal, variable)            │ │
+│ │                            Comms Overlay (full screen if enabled)      │ │
+│ │                            Ships Log (if comms enabled)                │ │
+│ └─────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+WIDGETS:
+- Radar: Rectangular, long-range, pan manual, friendlys fog of war
+- Waypoints: Persistent, draggable, click <1000u to grab
+- Option Buttons: Dynamic show/hide based on mode
+- Zoom Slider: MIN_ZOOM_DISTANCE to MAX_ZOOM_DISTANCE
+- Alert Level Select: Dropdown RED/YELLOW/GREEN
+
+MODES (state machine):
+1. TargetSelection (default): Click selects target, display updates
+2. WaypointPlacement: Click places waypoint, return to TargetSelection
+3. MoveWaypoint: Drag active waypoint, return on release
+4. LaunchProbe: Click launches probe at position, return to TargetSelection
+
+INTERACTIONS:
+- Click: Depends on mode (target selection, waypoint place, probe launch)
+- Drag: Pan radar (TargetSelection) or move waypoint (MoveWaypoint)
+- Wheel: Zoom, preserves world coords under cursor
+
+TARGET VALIDITY:
+- Checked every frame (onDraw): if target outside friendly short-range, auto-clear
+- Waypoints always visible
+- Probes tracked by RadarLink component
+
+HACKING:
+- Mini-game modal: Simon Says, etc.
+- Progress bar + system selector dropdown
+- Success = disable target system
+- Failure = alert level increase
+
+COMMS (if allow_comms=true):
+- Opening: Connection progress bar
+- Hailed: Answer/Ignore buttons
+- Chat: Text entry + scroll history
+- Script: Lua dialog options
+- Ships Log: Transaction/event history
+
+================================================================================
+SHARED ELEMENTS & PATTERNS
+================================================================================
+
+ALL SCREENS:
+✓ Background gradient + cross pattern tiling
+✓ AlertLevelOverlay (fullscreen color: red/yellow/green)
+✓ Custom Ship Functions panel (TopRight −20,120 | 250×?)
+✓ Keybind support (keys.* global input system)
+
+RADAR VARIANTS:
+• Helm: Circular, short-range, ghost dots, heading indicators
+• Weapons: Circular, short-range, targets, projections, tube indicators
+• Science: Circular, long-range, fog of war (nebula), probes
+• Relay: Rectangular, long-range, fog of war (friendlys), waypoints
+
+NO RADAR:
+• Engineering: Ship internal view grid instead
+
+================================================================================
+COLOR CODES (RGBA)
+================================================================================
+
+Impulse Slider:        (255, 255, 255, 255) - White/neutral
+Power Bar:             (192, 192, 32, 128) - Yellow
+Heat Bar:              (128, 32, 32, 192) gradient - Red
+Coolant Bar:           (32, 128, 128, 128) - Cyan
+Coolant Remaining:     (32, 128, 128, 128) - Cyan
+Combat Charge:         (192, 192, 192, 64) - Gray
+Warp Slider:           (255, 255, 255, 255) - White
+Damage Bar (good):     (64, 128, 64, 192) - Green
+Damage Bar (bad):      (128, 32, 32, 192) - Red
+
+================================================================================
+SNAP POINTS / DETENTS
+================================================================================
+
+Impulse:               0.0 (center neutral snap)
+Warp:                  Integer levels (0, 1, 2, 3, 4...)
+Power:                 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0
+Coolant:               0.0, 2.5, 5.0, 7.5, 10.0
+Combat Maneuver 2D:    Center point (0, 0)
+
+================================================================================

@@ -45,6 +45,10 @@ npm run typecheck
 DEPLOY_DOMAIN=tu-dominio HOSTINGER_API_TOKEN=... node scripts/deploy-hosting.mjs
 ```
 
+## Licencia
+
+GPL-2.0 — igual que Empty Epsilon, cuya API de scripting replicamos.
+
 ## Estado
 
 🚧 Fase 1-2: salas + voz + Pilotaje + Armamento (rayos, misiles, escudos),
