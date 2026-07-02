@@ -46,7 +46,7 @@ export interface RoomSnapshot {
 /** Entidad tal y como viaja en un snapshot de partida. */
 export interface SnapEntity {
   id: number;
-  kind: "player" | "cpu" | "asteroid" | "station" | "missile" | "nebula" | "mine" | "probe";
+  kind: "player" | "cpu" | "asteroid" | "station" | "missile" | "nebula" | "mine" | "probe" | "planet" | "blackhole" | "warpjammer" | "supplydrop";
   x: number;
   y: number;
   heading: number;
@@ -60,6 +60,8 @@ export interface SnapEntity {
   typeName?: string;
   beamFreq?: number;
   shieldFreq?: number;
+  description?: string;
+  color?: string;
 }
 
 export const SHIP_SYSTEMS = ["reactor", "beams", "missiles", "maneuver", "impulse", "warp", "jump", "shields"] as const;
@@ -157,6 +159,7 @@ export interface GameSnap {
   entities: SnapEntity[];
   events: SnapEvent[];
   waypoints: Waypoint[];
+  reputation: number;
 }
 
 /** Mensajes cliente → servidor */

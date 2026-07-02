@@ -24,11 +24,23 @@ const IMPLEMENTED = {
   globals: new Set([
     "PlayerSpaceship", "getPlayerShip", "CpuShip", "SpaceStation", "Asteroid",
     "Nebula", "Mine", "victory", "globalMessage", "getScenarioTime", "init", "update",
+    "Planet", "BlackHole", "WarpJammer", "SupplyDrop", "VisualAsteroid",
+    "random", "irandom", "vectorFromAngle", "distance", "getScenarioSetting",
+    "getEEVersion", "allowNewPlayerShips", "onNewPlayerShip", "getScriptStorage",
+    "getSectorName", "addReputationPoints", "takeReputationPoints", "getReputationPoints",
+    "getObjectsInRadius", "setCommsMessage", "addCommsReply",
   ]),
   methods: new Set([
     "setPosition", "getPosition", "setCallSign", "getCallSign", "setTemplate",
     "setFaction", "setHull", "getHull", "setRadius", "isValid", "destroy",
     "orderRoaming", "orderStandGround", "setScanned",
+    "orderIdle", "orderDefendLocation", "orderDefendTarget", "orderAttack",
+    "orderFlyTowards", "orderFlyTowardsBlind", "setRotation", "setHeading", "getHeading",
+    "setDescription", "setDescriptions", "setCommsFunction", "setCommsScript",
+    "setScannedByFaction", "setPlanetRadius", "setPlanetSurfaceTexture",
+    "setPlanetAtmosphereColor", "setPlanetAtmosphereTexture", "setPlanetCloudTexture",
+    "setDistanceFromMovementPlane", "setAxialRotationTime", "setRange",
+    "setHullMax", "setShieldsMax", "setImpulseMaxSpeed", "setRotationMaxSpeed",
   ]),
 };
 

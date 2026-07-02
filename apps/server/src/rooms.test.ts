@@ -478,3 +478,36 @@ describe("Nivel de alerta", () => {
     room.stop();
   });
 });
+
+describe("Comms scriptados desde Lua", () => {
+  it("hail a una entidad con setCommsFunction abre el diálogo del escenario", async () => {
+    const room = new RoomManager().create();
+    const b = fakeOutbox();
+    const r = room.join("Com", b);
+    if (!r.ok) throw new Error("join failed");
+    room.handleMessage(r.id, { t: "takeStation", station: "comms" });
+    room.uploadScenario(r.id, "comms-test.lua", `
+      function init()
+        SpaceStation():setCallSign("LUA-ST"):setPosition(1000, 0)
+          :setCommsFunction(function()
+            setCommsMessage("Canal scriptado operativo")
+            addCommsReply("Probar respuesta", function() setCommsMessage("Respuesta recibida") end)
+          end)
+      end
+    `);
+    room.handleMessage(r.id, { t: "startGame" });
+    await new Promise((res) => setTimeout(res, 900));
+    const station = [...room.world!.allEntities()].find((e) => e.kind === "station")!;
+    room.handleMessage(r.id, { t: "comms", cmd: "hail", id: station.id });
+    await new Promise((res) => setTimeout(res, 400));
+    let ch = b.msgs.filter((m) => m.t === "commsChannel").pop();
+    expect(ch && ch.t === "commsChannel" && ch.channel?.text).toBe("Canal scriptado operativo");
+    expect(ch && ch.t === "commsChannel" && ch.channel?.options[0]).toBe("Probar respuesta");
+
+    room.handleMessage(r.id, { t: "comms", cmd: "choose", index: 0 });
+    await new Promise((res) => setTimeout(res, 400));
+    ch = b.msgs.filter((m) => m.t === "commsChannel").pop();
+    expect(ch && ch.t === "commsChannel" && ch.channel?.text).toBe("Respuesta recibida");
+    room.stop();
+  });
+});

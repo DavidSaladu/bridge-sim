@@ -316,6 +316,51 @@ export class Scene3D {
       }
       return g;
     }
+    if (e.kind === "planet") {
+      const g = new THREE.Group();
+      const r = (e.radius ?? 2000) * SCALE;
+      const color = new THREE.Color(e.color ?? "#b08c4f");
+      const m = new THREE.Mesh(
+        new THREE.SphereGeometry(r, 32, 32),
+        new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0.05 }),
+      );
+      g.add(m);
+      const atmo = new THREE.Mesh(
+        new THREE.SphereGeometry(r * 1.04, 32, 32),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.15, side: THREE.BackSide }),
+      );
+      g.add(atmo);
+      return g;
+    }
+    if (e.kind === "blackhole") {
+      const g = new THREE.Group();
+      const core = new THREE.Mesh(
+        new THREE.SphereGeometry(6, 24, 24),
+        new THREE.MeshBasicMaterial({ color: 0x000000 }),
+      );
+      g.add(core);
+      const disc = new THREE.Mesh(
+        new THREE.TorusGeometry(11, 3, 12, 48),
+        new THREE.MeshStandardMaterial({ color: 0x6366f1, emissive: 0x4338ca, emissiveIntensity: 1.2, transparent: true, opacity: 0.7 }),
+      );
+      disc.rotation.x = Math.PI / 2.3;
+      g.add(disc);
+      g.scale.setScalar(4);
+      return g;
+    }
+    if (e.kind === "warpjammer" || e.kind === "supplydrop") {
+      const g = new THREE.Group();
+      const m = new THREE.Mesh(
+        new THREE.BoxGeometry(2, 2, 2),
+        new THREE.MeshStandardMaterial({
+          color: e.kind === "warpjammer" ? 0x9333ea : 0xf59e0b,
+          emissive: e.kind === "warpjammer" ? 0x9333ea : 0xf59e0b,
+          emissiveIntensity: 1,
+        }),
+      );
+      g.add(m);
+      return g;
+    }
     if (e.kind === "probe") {
       const g = new THREE.Group();
       const m = new THREE.Mesh(

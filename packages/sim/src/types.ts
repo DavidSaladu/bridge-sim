@@ -1,4 +1,4 @@
-export type EntityKind = "player" | "cpu" | "asteroid" | "station" | "missile" | "nebula" | "mine" | "probe";
+export type EntityKind = "player" | "cpu" | "asteroid" | "station" | "missile" | "nebula" | "mine" | "probe" | "planet" | "blackhole" | "warpjammer" | "supplydrop";
 
 export interface EntityState {
   id: number;
@@ -16,6 +16,8 @@ export interface EntityState {
   typeName?: string;
   beamFreq?: number;
   shieldFreq?: number;
+  description?: string;
+  color?: string;
 }
 
 export type TubeStateSim = "empty" | "loading" | "loaded";
@@ -81,4 +83,5 @@ export interface WorldSnapshot {
   entities: EntityState[];
   events: SimEvent[];
   waypoints: { id: number; x: number; y: number }[];
+  reputation: number;
 }

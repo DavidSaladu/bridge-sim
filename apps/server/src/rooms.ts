@@ -37,6 +37,7 @@ interface Player extends PlayerInfo {
   disconnectedAt: number | null;
   resumeKey: string;
   channelTargetId: number | null;
+  scriptedChannel: boolean;
   hack: HackSession | null;
 }
 
@@ -146,6 +147,59 @@ export class Room {
     } else if (!this.runner && this.world.hostilesAlive === 0) {
       this.endGame(true, "Todos los hostiles destruidos. ¡Victoria!");
     }
+  }
+
+  private async tryScriptedHail(player: Player, targetId: number): Promise<void> {
+    const world = this.world;
+    const runner = this.runner;
+    const target = world?.get(targetId);
+    if (!world || !runner || !target) return;
+    const scripted = await runner.hasCommsFunction(targetId);
+    if (scripted) {
+      if (dist(world.ship, target) > 20000) {
+        player.outbox?.send({ t: "error", code: "hail_failed", message: "Fuera de alcance de comunicaciones" });
+        return;
+      }
+      const res = await runner.openComms(targetId);
+      if (res && (res.text || res.options.length > 0)) {
+        player.channelTargetId = targetId;
+        player.scriptedChannel = true;
+        const cs = target instanceof CpuShip || target instanceof SpaceStation ? target.callSign : "??";
+        player.outbox?.send({
+          t: "commsChannel",
+          channel: { callSign: cs, text: res.text || "…", options: [...res.options, "Cerrar canal"] },
+        });
+        return;
+      }
+    }
+    // Fallback: diálogos de serie
+    player.scriptedChannel = false;
+    if (target instanceof SpaceStation) {
+      if (dist(world.ship, target) > 20000) {
+        player.outbox?.send({ t: "error", code: "hail_failed", message: "Fuera de alcance de comunicaciones" });
+        return;
+      }
+      player.channelTargetId = target.id;
+      player.outbox?.send({
+        t: "commsChannel",
+        channel: {
+          callSign: target.callSign,
+          text: "Aquí " + target.callSign + ". Canal abierto. ¿Situación?",
+          options: ["Solicitar informe táctico", "Cerrar canal"],
+        },
+      });
+      return;
+    }
+    if (!(target instanceof CpuShip) || !target.scanned) {
+      player.outbox?.send({ t: "error", code: "hail_failed", message: "Solo puedes llamar a contactos escaneados" });
+      return;
+    }
+    if (dist(world.ship, target) > 20000) {
+      player.outbox?.send({ t: "error", code: "hail_failed", message: "Fuera de alcance de comunicaciones" });
+      return;
+    }
+    player.channelTargetId = target.id;
+    this.sendChannel(player, target);
   }
 
   private sendHackState(player: Player): void {
@@ -262,6 +316,7 @@ export class Room {
       disconnectedAt: null,
       resumeKey,
       channelTargetId: null,
+      scriptedChannel: false,
       hack: null,
     };
     this.players.set(id, player);
@@ -440,6 +495,12 @@ export class Room {
             break;
           case "hail": {
             const target = world.get(typeof msg.id === "number" ? msg.id : -1);
+            // Comms scriptados por el escenario Lua tienen prioridad
+            if (target && this.runner && !this.runner.stopped) {
+              void this.tryScriptedHail(player, target.id);
+              // tryScriptedHail hace fallback a los diálogos de serie si no hay script
+              return;
+            }
             if (target instanceof SpaceStation) {
               if (dist(world.ship, target) > 20000) {
                 player.outbox?.send({ t: "error", code: "hail_failed", message: "Fuera de alcance de comunicaciones" });
@@ -469,6 +530,23 @@ export class Room {
             break;
           }
           case "choose": {
+            if (player.scriptedChannel && this.runner && typeof msg.index === "number") {
+              void this.runner.chooseComms(msg.index + 1).then((res) => {
+                if (!res || (!res.text && res.options.length === 0)) {
+                  player.scriptedChannel = false;
+                  player.channelTargetId = null;
+                  player.outbox?.send({ t: "commsChannel", channel: null });
+                  return;
+                }
+                const target = player.channelTargetId != null ? this.world?.get(player.channelTargetId) : undefined;
+                const cs = target instanceof CpuShip || target instanceof SpaceStation ? target.callSign : "??";
+                player.outbox?.send({
+                  t: "commsChannel",
+                  channel: { callSign: cs, text: res.text, options: [...res.options, "Cerrar canal"] },
+                });
+              });
+              return;
+            }
             const target = player.channelTargetId != null ? world.get(player.channelTargetId) : undefined;
             if (target instanceof SpaceStation) {
               if (msg.index === 0) {
@@ -494,6 +572,7 @@ export class Room {
             break;
           }
           case "closeChannel":
+            player.scriptedChannel = false;
             player.channelTargetId = null;
             player.outbox?.send({ t: "commsChannel", channel: null });
             break;

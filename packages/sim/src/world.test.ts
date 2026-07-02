@@ -524,3 +524,50 @@ describe("Colisiones con asteroides", () => {
     expect(c.shield + c.hull).toBeLessThan(c.shieldMax + c.spec.hullMax);
   });
 });
+
+describe("B2.1: entidades y órdenes EE", () => {
+  it("el agujero negro atrae y daña en el núcleo", () => {
+    const w = new World(20);
+    w.addBlackHole(0, 3000);
+    w.ship.setImpulse(0);
+    const y0 = w.ship.y;
+    for (let i = 0; i < 20 * 10; i++) w.tick();
+    expect(w.ship.y).toBeGreaterThan(y0); // arrastrada hacia el agujero
+  });
+
+  it("el warp jammer apaga el warp dentro de su rango", () => {
+    const w = new World(20);
+    w.addWarpJammer(0, 0);
+    w.ship.setWarp(3);
+    w.tick();
+    expect(w.ship.warp).toBe(0);
+  });
+
+  it("el supply drop repone energía y munición al pasar por encima", () => {
+    const w = new World(20);
+    w.ship.engineering.energy = 100;
+    w.ship.ammo.homing = 0;
+    w.addSupplyDrop(0, 200);
+    w.ship.setImpulse(0.5);
+    for (let i = 0; i < 20 * 8; i++) w.tick();
+    expect(w.ship.engineering.energy).toBeGreaterThan(300);
+    expect(w.ship.ammo.homing).toBeGreaterThan(0);
+  });
+
+  it("orderFlyTowards mueve al cpu a un punto y luego queda idle", () => {
+    const w = new World(20);
+    const c = w.addCpuShip(0, 12000, "MV-1", "Flavia Falcon", "Independent");
+    c.order = { kind: "flyTowards", x: 0, y: 20000 };
+    for (let i = 0; i < 20 * 260; i++) w.tick();
+    expect(Math.hypot(c.x - 0, c.y - 20000)).toBeLessThan(800);
+    expect(c.order.kind).toBe("idle");
+  });
+
+  it("orderDefendLocation mantiene al cpu cerca del punto", () => {
+    const w = new World(20);
+    const c = w.addCpuShip(0, 9000, "DF-1", "Phobos T3", "Kraylor");
+    c.order = { kind: "defendLocation", x: 0, y: 9000 };
+    for (let i = 0; i < 20 * 30; i++) w.tick();
+    expect(Math.hypot(c.x - 0, c.y - 9000)).toBeLessThan(2000);
+  });
+});

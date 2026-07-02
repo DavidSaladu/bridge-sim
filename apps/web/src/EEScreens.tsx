@@ -432,6 +432,11 @@ export function ScienceEE({ snap, send, events }: { snap: GameSnap; send: (m: ob
           {eeField("Escudos", sel?.shieldFrac != null ? `${Math.round(sel.shieldFrac * 100)}%` : "–")}
           {eeField("Casco", sel?.hullFrac != null ? `${Math.round(sel.hullFrac * 100)}%` : "–")}
           {eeField("Frecuencias", sel?.shieldFreq != null ? `E ${400 + sel.shieldFreq * 20} / R ${400 + (sel.beamFreq ?? 0) * 20} THz` : "–")}
+          {sel?.description && (
+            <p className="muted" style={{ margin: 0, padding: "0.35rem 0.4rem", fontSize: "0.82rem", fontStyle: "italic" }}>
+              {sel.description}
+            </p>
+          )}
         </div>
       </div>
 
@@ -549,6 +554,7 @@ export function RelayEE({ snap, send, events, channel, hack }: {
         </button>
         <div style={{ height: 6 }} />
         <InfoRow icon="🕐" label="Reloj" value={new Date(snap.time * 1000).toISOString().slice(11, 19)} />
+        <InfoRow icon="⭐" label="Reputación" value={String(snap.reputation)} />
         <InfoRow icon="📍" label="Sector" value={sectorName(ship.x, ship.y)} />
       </div>
 

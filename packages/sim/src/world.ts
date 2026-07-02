@@ -161,6 +161,78 @@ export class Probe extends Entity {
   }
 }
 
+export class Planet extends Entity {
+  radius = 2000;
+  color = "#b08c4f";
+  description = "";
+  constructor(id: number, x: number, y: number) {
+    super(id, "planet", x, y);
+  }
+  update(): void {}
+  override state(): EntityState {
+    return { ...super.state(), radius: this.radius, color: this.color, callSign: this.callSign, description: this.description || undefined };
+  }
+  callSign = "";
+}
+
+export class BlackHole extends Entity {
+  radius = 5000; // radio de influencia
+  constructor(id: number, x: number, y: number) {
+    super(id, "blackhole", x, y);
+  }
+  update(dt: number, world: World): void {
+    for (const e of world.allEntities()) {
+      if (!(e instanceof MovingShip) && e.kind !== "missile" && e.kind !== "probe") continue;
+      if (e === this || e.dead) continue;
+      const d = dist(this, e);
+      if (d > this.radius) continue;
+      const pull = (1 - d / this.radius) ** 2 * 220 * dt;
+      e.x += ((this.x - e.x) / Math.max(1, d)) * pull;
+      e.y += ((this.y - e.y) / Math.max(1, d)) * pull;
+      if (d < this.radius * 0.12) {
+        if (e instanceof MovingShip) {
+          e.takeDamage(80 * dt, bearing(e, this), world);
+        } else {
+          e.dead = true;
+        }
+      }
+    }
+  }
+  override state(): EntityState {
+    return { ...super.state(), radius: this.radius };
+  }
+}
+
+export class WarpJammer extends Entity {
+  range = 7000;
+  constructor(id: number, x: number, y: number) {
+    super(id, "warpjammer", x, y);
+  }
+  update(): void {}
+  override state(): EntityState {
+    return { ...super.state(), radius: this.range };
+  }
+}
+
+export class SupplyDrop extends Entity {
+  energy = 300;
+  constructor(id: number, x: number, y: number) {
+    super(id, "supplydrop", x, y);
+  }
+  update(_dt: number, world: World): void {
+    const ship = world.ship;
+    if (!ship.dead && dist(this, ship) < 400) {
+      this.dead = true;
+      ship.engineering.energy = Math.min(1000, ship.engineering.energy + this.energy);
+      const maxAmmo = ship.template.ammo ?? { homing: 8, nuke: 0, emp: 0 };
+      for (const k of ["homing", "nuke", "emp"] as const) {
+        ship.ammo[k] = Math.min(maxAmmo[k], ship.ammo[k] + 2);
+      }
+      world.events.push({ k: "boom", x: this.x, y: this.y, big: false });
+    }
+  }
+}
+
 export class Mine extends Entity {
   constructor(id: number, x: number, y: number) {
     super(id, "mine", x, y);
@@ -446,6 +518,9 @@ export class PlayerShip extends MovingShip {
     const baseSpec = this.spec;
     const effImpulse = this.engineering.effectiveness("impulse");
     const effManeuver = this.engineering.effectiveness("maneuver");
+    const jammed = world.isWarpJammed(this);
+    if (jammed && this.warp > 0) this.warp = 0;
+    if (jammed && this.jumpCharging) this.abortJump();
     if (this.warp > 0) {
       // Warp: velocidad masiva, giro torpe, drenaje de energía
       const effWarp = Math.min(1.5, this.engineering.effectiveness("warp"));
@@ -687,6 +762,8 @@ export class CpuShip extends MovingShip {
   scanLevel = 0;
   beamsDisabledUntil = 0;
   enginesDisabledUntil = 0;
+  description = "";
+  order: { kind: "roaming" | "idle" | "standGround" | "defendLocation" | "defendTarget" | "attack" | "flyTowards"; x?: number; y?: number; targetId?: number } = { kind: "roaming" };
   private missileCd = 20;
 
   get scanned(): boolean {
@@ -738,8 +815,11 @@ export class CpuShip extends MovingShip {
       super.update(dt);
       return;
     }
+    // Movimiento según orden activa (cuando no está en combate cercano)
+    const o = this.order;
+    const engageRange = o.kind === "standGround" || o.kind === "defendLocation" ? 2500 : 4500;
     const beam = this.template.beam;
-    if (this.hostile && beam && d < 4500) {
+    if (this.hostile && beam && d < engageRange) {
       // Modo ataque: perseguir y disparar
       this.targetHeading = bearing(this, player);
       this.impulse = d > 900 ? 0.8 : 0.3;
@@ -758,11 +838,51 @@ export class CpuShip extends MovingShip {
         }
       }
     } else {
-      this.nextDecision -= dt;
-      if (this.nextDecision <= 0) {
-        this.targetHeading = this.rng() * 360;
-        this.nextDecision = 8 + this.rng() * 8;
-        this.impulse = 0.5;
+      switch (o.kind) {
+        case "idle":
+        case "standGround":
+          this.impulse = 0;
+          break;
+        case "flyTowards":
+        case "defendLocation": {
+          const tx = o.x ?? this.x;
+          const ty = o.y ?? this.y;
+          const dd = Math.hypot(tx - this.x, ty - this.y);
+          if (dd > 500) {
+            this.targetHeading = bearing(this, { x: tx, y: ty });
+            this.impulse = 0.7;
+          } else if (o.kind === "flyTowards") {
+            this.order = { kind: "idle" };
+            this.impulse = 0;
+          } else {
+            this.impulse = 0.1;
+          }
+          break;
+        }
+        case "defendTarget":
+        case "attack": {
+          const t = o.targetId != null ? world.get(o.targetId) : undefined;
+          if (t && !t.dead) {
+            const dd = dist(this, t);
+            if (dd > (o.kind === "attack" ? 900 : 1500)) {
+              this.targetHeading = bearing(this, t);
+              this.impulse = 0.8;
+            } else {
+              this.impulse = 0.2;
+            }
+          } else {
+            this.order = { kind: "roaming" };
+          }
+          break;
+        }
+        default: {
+          this.nextDecision -= dt;
+          if (this.nextDecision <= 0) {
+            this.targetHeading = this.rng() * 360;
+            this.nextDecision = 8 + this.rng() * 8;
+            this.impulse = 0.5;
+          }
+        }
       }
     }
     super.update(dt);
@@ -799,6 +919,7 @@ export class CpuShip extends MovingShip {
       shieldFrac: this.shield / this.shieldMax,
       scanned: true,
       scanLevel: this.scanLevel,
+      description: this.description || undefined,
     };
     if (this.scanLevel >= 2) {
       base.beamFreq = this.beamFreq;
@@ -871,6 +992,7 @@ export class World {
   rng: () => number;
   events: SimEvent[] = [];
   waypoints: { id: number; x: number; y: number }[] = [];
+  reputation = 0;
   private nextWaypointId = 1;
 
   addWaypoint(x: number, y: number): void {
@@ -929,6 +1051,37 @@ export class World {
     const p = new Probe(this.allocId(), from.x, from.y, tx, ty);
     this.entities.set(p.id, p);
     return p;
+  }
+
+  addPlanet(x: number, y: number): Planet {
+    const p = new Planet(this.allocId(), x, y);
+    this.entities.set(p.id, p);
+    return p;
+  }
+
+  addBlackHole(x: number, y: number): BlackHole {
+    const b = new BlackHole(this.allocId(), x, y);
+    this.entities.set(b.id, b);
+    return b;
+  }
+
+  addWarpJammer(x: number, y: number): WarpJammer {
+    const w = new WarpJammer(this.allocId(), x, y);
+    this.entities.set(w.id, w);
+    return w;
+  }
+
+  addSupplyDrop(x: number, y: number): SupplyDrop {
+    const d = new SupplyDrop(this.allocId(), x, y);
+    this.entities.set(d.id, d);
+    return d;
+  }
+
+  isWarpJammed(p: { x: number; y: number }): boolean {
+    for (const e of this.entities.values()) {
+      if (e instanceof WarpJammer && !e.dead && dist(e, p) <= e.range) return true;
+    }
+    return false;
   }
 
   addMine(x: number, y: number): Mine {
@@ -1030,6 +1183,7 @@ export class World {
         .map((e) => e.state()),
       events: this.events,
       waypoints: [...this.waypoints],
+      reputation: Math.round(this.reputation),
     };
     this.events = [];
     return snap;

@@ -202,6 +202,48 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
       ctx.lineWidth = 1;
     }
 
+    // Planetas: círculos sólidos de color
+    for (const e of snap.entities) {
+      if (e.kind !== "planet" || !e.radius) continue;
+      const sx = c + (e.x - cx) * scale;
+      const sy = c - (e.y - cy) * scale;
+      const sr = e.radius * scale;
+      ctx.save();
+      if (!rect) { ctx.beginPath(); ctx.arc(c, c, c - 1, 0, Math.PI * 2); ctx.clip(); }
+      ctx.fillStyle = (e.color ?? "#b08c4f") + "cc";
+      ctx.beginPath();
+      ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+      ctx.fill();
+      if (e.callSign) {
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        ctx.font = "11px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(e.callSign, sx, sy - sr - 4 < 10 ? sy : sy - sr - 4);
+        ctx.textAlign = "start";
+      }
+      ctx.restore();
+    }
+    // Agujeros negros: espiral
+    for (const e of snap.entities) {
+      if (e.kind !== "blackhole" || !e.radius) continue;
+      const sx = c + (e.x - cx) * scale;
+      const sy = c - (e.y - cy) * scale;
+      const sr = Math.max(8, e.radius * 0.25 * scale);
+      ctx.save();
+      if (!rect) { ctx.beginPath(); ctx.arc(c, c, c - 1, 0, Math.PI * 2); ctx.clip(); }
+      ctx.strokeStyle = "rgba(129,140,248,0.8)";
+      ctx.beginPath();
+      for (let t = 0; t < Math.PI * 6; t += 0.15) {
+        const rr = (t / (Math.PI * 6)) * sr;
+        const px2 = sx + Math.cos(t + performance.now() / 900) * rr;
+        const py2 = sy + Math.sin(t + performance.now() / 900) * rr;
+        if (t === 0) ctx.moveTo(px2, py2);
+        else ctx.lineTo(px2, py2);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
     // Nebulosas: manchas violetas translúcidas (pueden verse parcialmente aunque el centro quede fuera)
     for (const e of snap.entities) {
       if (e.kind !== "nebula" || !e.radius) continue;
@@ -289,6 +331,19 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
         ctx.beginPath();
         ctx.arc(sx, sy, 5000 * scale > c ? 12 : 5000 * scale, 0, Math.PI * 2);
         ctx.stroke();
+      } else if (e.kind === "warpjammer") {
+        ctx.strokeStyle = "#c084fc";
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 6); ctx.lineTo(sx + 5, sy + 4); ctx.lineTo(sx - 5, sy + 4); ctx.closePath();
+        ctx.stroke();
+        ctx.fillStyle = "#c084fc";
+        ctx.font = "9px monospace";
+        ctx.fillText("JAM", sx + 7, sy + 3);
+      } else if (e.kind === "supplydrop") {
+        ctx.fillStyle = "#fbbf24";
+        ctx.strokeStyle = "#fde68a";
+        ctx.fillRect(sx - 3, sy - 3, 6, 6);
+        ctx.strokeRect(sx - 3, sy - 3, 6, 6);
       } else if (e.kind === "mine") {
         ctx.fillStyle = "#fb7185";
         ctx.beginPath();

@@ -3,67 +3,46 @@
 Generado por `scripts/compat-harness.mjs` contra 37 escenarios oficiales de EE.
 
 - Escenarios que cargan e inician sin error (entorno instrumentado): **5/37**
-- Cobertura de símbolos: globales **8/43**, métodos **10/56**
+- Cobertura de símbolos: globales **20/43**, métodos **32/56**
 
-### Globales/constructores: 8/43 cubiertos (19%)
+### Globales/constructores: 20/43 cubiertos (47%)
 
 **Faltantes por uso (top 40):**
 
 | Símbolo | Usos |
 |---|---|
-| `random` | 1740 |
 | `_` | 118 |
-| `VisualAsteroid` | 64 |
 | `stockTemplate` | 49 |
-| `getScenarioSetting` | 36 |
 | `setCirclePos` | 9 |
-| `vectorFromAngle` | 7 |
-| `distance` | 5 |
-| `irandom` | 5 |
 | `createObjectsOnLine` | 5 |
-| `allowNewPlayerShips` | 4 |
-| `onNewPlayerShip` | 3 |
-| `addGMFunction` | 3 |
 | `createEntity` | 3 |
-| `getScriptStorage` | 3 |
+| `addGMFunction` | 3 |
 | `placeStation` | 2 |
-| `getEEVersion` | 2 |
-| `Planet` | 2 |
-| `BlackHole` | 1 |
-| `WormHole` | 1 |
-| `y1` | 1 |
 | `y2` | 1 |
+| `y1` | 1 |
+| `WormHole` | 1 |
 | `y` | 1 |
 | `Artifact` | 1 |
+| `starhammerV` | 1 |
+| `atlantisY42` | 1 |
+| `tyr` | 1 |
+| `enforcer` | 1 |
 | `cucaracha` | 1 |
 | `maniapak` | 1 |
-| `enforcer` | 1 |
-| `starhammerV` | 1 |
-| `tyr` | 1 |
-| `gnat` | 1 |
 | `starhammerIII` | 1 |
+| `gnat` | 1 |
 | `farco11` | 1 |
-| `atlantisY42` | 1 |
 | `racePoint2y` | 1 |
 | `enemy_config_selection` | 1 |
 
-### Métodos: 10/56 cubiertos (18%)
+### Métodos: 32/56 cubiertos (57%)
 
 **Faltantes por uso (top 40):**
 
 | Símbolo | Usos |
 |---|---|
-| `setRotation` | 82 |
-| `orderDefendTarget` | 31 |
-| `setCommsScript` | 18 |
-| `setCommsFunction` | 17 |
-| `setDescription` | 16 |
-| `orderDefendLocation` | 15 |
-| `setHeading` | 14 |
-| `orderIdle` | 12 |
 | `setBeamWeapon` | 10 |
 | `setWeaponStorage` | 10 |
-| `setScannedByFaction` | 10 |
 | `setWeaponStorageMax` | 9 |
 | `setSystemPower` | 9 |
 | `commandSetSystemPowerRequest` | 9 |
@@ -71,28 +50,21 @@ Generado por `scripts/compat-harness.mjs` contra 37 escenarios oficiales de EE.
 | `addReputationPoints` | 4 |
 | `setWeaponTubeCount` | 4 |
 | `orderFlyFormation` | 3 |
-| `setShieldsMax` | 3 |
 | `sendCommsMessage` | 3 |
 | `setScanningParameters` | 3 |
-| `setHullMax` | 2 |
-| `setDescriptions` | 2 |
-| `setPlanetAtmosphereColor` | 2 |
-| `setDistanceFromMovementPlane` | 2 |
-| `setPlanetRadius` | 2 |
-| `setPlanetAtmosphereTexture` | 2 |
 | `hasWarpDrive` | 1 |
 | `addToShipLog` | 1 |
-| `setTypeName` | 1 |
 | `setTargetPosition` | 1 |
 | `setWeaponTubeDirection` | 1 |
-| `orderAttack` | 1 |
-| `commandTargetRotation` | 1 |
-| `commandDock` | 1 |
+| `setTypeName` | 1 |
 | `setRadarSignatureInfo` | 1 |
+| `commandDock` | 1 |
+| `commandTargetRotation` | 1 |
 | `setRadarTraceColor` | 1 |
-| `orderFlyTowardsBlind` | 1 |
 | `setJumpDrive` | 1 |
-| `orderFlyTowards` | 1 |
+| `setWarpDrive` | 1 |
+| `setLongRangeRadarRange` | 1 |
+| `onDestroyed` | 1 |
 
 ### Escenarios con errores de ejecución en el harness
 
