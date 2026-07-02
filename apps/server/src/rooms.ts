@@ -533,6 +533,13 @@ export class Room {
             this.sendHackState(player);
             break;
           }
+          case "setAlert": {
+            const lvl = msg.level === "yellow" || msg.level === "red" ? msg.level : "normal";
+            world.ship.alert = lvl;
+            const labels = { normal: "Estado normal", yellow: "ALERTA AMARILLA", red: "🔴 ALERTA ROJA" } as const;
+            this.broadcast({ t: "chat", from: "sys", fromName: "🚨 Alerta", text: labels[lvl], ts: Date.now() });
+            break;
+          }
           case "hackCancel":
             player.hack = null;
             player.outbox?.send({ t: "hack", state: null });

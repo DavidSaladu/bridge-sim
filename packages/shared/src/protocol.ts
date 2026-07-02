@@ -137,6 +137,7 @@ export interface SnapShip {
   shieldCalibration: number | null;
   combatCharge: number;
   selfDestruct: { state: "armed" | "countdown"; t: number } | null;
+  alert: "normal" | "yellow" | "red";
 }
 
 export type SnapEvent =
@@ -196,6 +197,7 @@ export type ClientMsg =
   | { t: "comms"; cmd: "hackStart"; id: number; system: "shields" | "engines" | "beams" }
   | { t: "comms"; cmd: "hackReveal"; x: number; y: number }
   | { t: "comms"; cmd: "hackCancel" }
+  | { t: "comms"; cmd: "setAlert"; level: "normal" | "yellow" | "red" }
   | { t: "selectScenario"; id: string }
   | { t: "uploadScenario"; name: string; source: string }
   | { t: "selfDestruct"; cmd: "arm" | "confirm" | "cancel" };

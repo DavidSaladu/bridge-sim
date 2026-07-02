@@ -21,9 +21,11 @@ interface Props {
   edgeSignals?: boolean;
   center?: { x: number; y: number };
   ringLabels?: boolean;
+  rect?: boolean;
+  coverage?: boolean;
 }
 
-export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClickWorld, targetId, events, showBeamArc, sectorGrid, edgeSignals, center, ringLabels }: Props) {
+export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClickWorld, targetId, events, showBeamArc, sectorGrid, edgeSignals, center, ringLabels, rect, coverage }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -42,10 +44,15 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
 
     ctx.strokeStyle = "rgba(56,189,248,0.25)";
     ctx.fillStyle = "rgba(8,15,30,0.9)";
-    ctx.beginPath();
-    ctx.arc(c, c, c - 1, 0, Math.PI * 2);
-    ctx.fill();
-    const ringCount = ringLabels ? Math.min(5, Math.round(range / 5000)) || 4 : 3;
+    if (rect) {
+      ctx.fillRect(0, 0, size, size);
+      ctx.strokeRect(0, 0, size, size);
+    } else {
+      ctx.beginPath();
+      ctx.arc(c, c, c - 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const ringCount = rect ? 0 : ringLabels ? Math.min(5, Math.round(range / 5000)) || 4 : 3;
     for (let ri = 1; ri <= ringCount; ri++) {
       const f = ri / ringCount;
       ctx.beginPath();
@@ -63,18 +70,36 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
       }
       ctx.textAlign = "start";
     }
-    ctx.beginPath();
-    ctx.moveTo(c, 2); ctx.lineTo(c, size - 2);
-    ctx.moveTo(2, c); ctx.lineTo(size - 2, c);
-    ctx.strokeStyle = "rgba(56,189,248,0.12)";
-    ctx.stroke();
+    if (!rect) {
+      ctx.beginPath();
+      ctx.moveTo(c, 2); ctx.lineTo(c, size - 2);
+      ctx.moveTo(2, c); ctx.lineTo(size - 2, c);
+      ctx.strokeStyle = "rgba(56,189,248,0.12)";
+      ctx.stroke();
+    }
+
+    // Cobertura de sensores (Relay): círculos de visibilidad alrededor de nave y sondas
+    if (coverage) {
+      for (const e of snap.entities) {
+        if (e.kind !== "player" && e.kind !== "probe") continue;
+        const pt0 = [c + (e.x - cx) * scale, c - (e.y - cy) * scale];
+        const r = 5000 * scale;
+        const grad = ctx.createRadialGradient(pt0[0]!, pt0[1]!, r * 0.4, pt0[0]!, pt0[1]!, r);
+        grad.addColorStop(0, "rgba(56,189,248,0.10)");
+        grad.addColorStop(1, "rgba(56,189,248,0.02)");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(pt0[0]!, pt0[1]!, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
 
     // Corona de grados (000 = norte, sentido horario)
-    const step = size >= 400 ? 30 : 90;
+    const step = rect ? 0 : size >= 400 ? 30 : 90;
     ctx.font = size >= 400 ? "9px monospace" : "8px monospace";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    for (let deg = 0; deg < 360; deg += 10) {
+    for (let deg = 0; step > 0 && deg < 360; deg += 10) {
       const a = (deg * Math.PI) / 180;
       const isMajor = deg % step === 0;
       const r1 = c - (isMajor ? 8 : 4);
@@ -128,28 +153,53 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
       return [c + dx * scale, c - dy * scale];
     };
 
-    // Señales en el borde: dirección de fuentes más allá del alcance (Ciencia)
+    // Anillos de señal ondulados estilo EE: rojo (eléctrica), verde (residual), azul (gravimétrica)
     if (edgeSignals) {
+      const BUCKETS = 96;
+      const bands: Record<string, Float32Array> = {
+        red: new Float32Array(BUCKETS),
+        green: new Float32Array(BUCKETS),
+        blue: new Float32Array(BUCKETS),
+      };
       for (const e of snap.entities) {
+        if (e.kind === "player") continue;
         const dx = e.x - cx;
         const dy = e.y - cy;
-        const d = Math.hypot(dx, dy);
-        if (d <= range || e.kind === "player") continue;
-        const color =
-          e.kind === "nebula" ? "96, 165, 250" :     // azul: gravimétrica
-          e.kind === "asteroid" || e.kind === "mine" ? "74, 222, 128" : // verde: biológica/residual
-          "248, 113, 113";                           // rojo: eléctrica (naves, estaciones)
-        const alpha = Math.max(0.18, Math.min(0.85, 1 - (d - range) / (range * 3)));
-        const ang = Math.atan2(dx, dy);
-        const a0 = ang - Math.PI / 2 - 0.09;
-        const a1 = ang - Math.PI / 2 + 0.09;
-        ctx.strokeStyle = `rgba(${color}, ${alpha})`;
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.arc(c, c, c - 4, a0, a1);
-        ctx.stroke();
-        ctx.lineWidth = 1;
+        const d = Math.max(600, Math.hypot(dx, dy));
+        const band =
+          e.kind === "nebula" ? "blue" :
+          e.kind === "asteroid" || e.kind === "mine" ? "green" : "red";
+        const weight = e.kind === "nebula" ? (e.radius ?? 3000) / d : e.kind === "station" ? 4000 / d : 2500 / d;
+        const bucket = Math.round(((Math.atan2(dx, dy) + Math.PI * 2) / (Math.PI * 2)) * BUCKETS) % BUCKETS;
+        for (let sp = -6; sp <= 6; sp++) {
+          const idx = (bucket + sp + BUCKETS) % BUCKETS;
+          bands[band]![idx] = Math.min(1.6, bands[band]![idx]! + weight * Math.exp(-(sp * sp) / 10));
+        }
       }
+      const now2 = performance.now() / 1000;
+      const colors: [string, string, number][] = [
+        ["red", "rgba(248,113,113,0.85)", c - 6],
+        ["green", "rgba(74,222,128,0.8)", c - 12],
+        ["blue", "rgba(96,165,250,0.8)", c - 18],
+      ];
+      for (const [band, color, baseR] of colors) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        for (let i = 0; i <= BUCKETS; i++) {
+          const idx = i % BUCKETS;
+          const ang = (idx / BUCKETS) * Math.PI * 2 - Math.PI / 2;
+          const amp = bands[band]![idx]! * 9;
+          const noise = amp > 0.3 ? Math.sin(now2 * 7 + idx * 2.7) * amp * 0.5 : 0;
+          const r = baseR - amp - noise;
+          const px2 = c + Math.cos(ang) * r;
+          const py2 = c + Math.sin(ang) * r;
+          if (i === 0) ctx.moveTo(px2, py2);
+          else ctx.lineTo(px2, py2);
+        }
+        ctx.stroke();
+      }
+      ctx.lineWidth = 1;
     }
 
     // Nebulosas: manchas violetas translúcidas (pueden verse parcialmente aunque el centro quede fuera)

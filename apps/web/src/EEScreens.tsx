@@ -321,3 +321,471 @@ export function WeaponsEE({ snap, send, events }: { snap: GameSnap; send: (m: ob
     </div>
   );
 }
+
+/* ————— SCIENCE ————— */
+
+import type { CommsChannel, HackState } from "./StationView.js";
+import { ScanWave } from "./ScanWave.js";
+import { distU, sectorName } from "./units.js";
+import { SHIP_SYSTEMS, SYSTEM_LABELS, type ShipSystem } from "@bridge/shared";
+
+function eeField(label: string, value: string) {
+  return (
+    <div key={label} style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--border)", padding: "0.25rem 0.4rem", fontSize: "0.88rem" }}>
+      <span className="muted">{label}</span>
+      <span>{value}</span>
+    </div>
+  );
+}
+
+export function ScienceEE({ snap, send, events }: { snap: GameSnap; send: (m: object) => void; events: TimedEvent[] }) {
+  const { ship } = snap;
+  const [zoom, setZoom] = useState(1);
+  const [view, setView] = useState<"radar" | "database" | number>("radar"); // number = id de sonda
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [tune, setTune] = useState<[number, number]>([50, 50]);
+  const [db, setDb] = useState<Record<string, string | number>[]>([]);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState(600);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setSize(Math.max(360, Math.min(el.clientWidth - 12, el.clientHeight - 12))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const sel = snap.entities.find((e) => e.id === selectedId);
+  const scanning = ship.scan;
+  const probes = snap.entities.filter((e) => e.kind === "probe");
+  const probeCenter = typeof view === "number" ? snap.entities.find((e) => e.id === view) : undefined;
+  const range = probeCenter ? 5000 : 30000 / zoom;
+  const distOf = (e: { x: number; y: number }) => Math.hypot(e.x - ship.x, e.y - ship.y);
+  const bearingOf = (e: { x: number; y: number }) =>
+    Math.round(((Math.atan2(e.x - ship.x, e.y - ship.y) * 180) / Math.PI + 360) % 360);
+
+  function applyTune(i: 0 | 1, v: number) {
+    const next: [number, number] = i === 0 ? [v, tune[1]] : [tune[0], v];
+    setTune(next);
+    send({ t: "science", cmd: "scanTune", a: next[0], b: next[1] });
+  }
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative", height: "min(78vh, 860px)", width: "100%", overflow: "hidden", borderRadius: 8, background: "radial-gradient(ellipse at center, #0b1120 0%, #060a14 75%)" }}>
+      {view === "database" ? (
+        <div style={{ position: "absolute", inset: 12, overflow: "auto", fontSize: "0.85rem" }}>
+          <table style={{ borderSpacing: "0.6rem 0.3rem" }}>
+            <thead><tr className="muted" style={{ textAlign: "left" }}><th>Nave</th><th>Clase</th><th>Casco</th><th>Escudos</th><th>Vel.</th><th>Rayos</th><th>Tubos</th><th>Motores</th></tr></thead>
+            <tbody>{db.map((t, i) => (
+              <tr key={i}><td style={{ color: "#7dd3fc" }}>{t.name}</td><td>{t.shipClass}</td><td>{t.hullMax}</td><td>{t.shields}</td><td>{t.maxSpeed} m/s</td><td>{t.beam}</td><td>{t.tubes}</td><td>{t.drives}</td></tr>
+            ))}</tbody>
+          </table>
+        </div>
+      ) : (
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Radar
+            snap={snap}
+            range={range}
+            size={size}
+            events={events}
+            edgeSignals={!probeCenter}
+            ringLabels
+            targetId={selectedId}
+            center={probeCenter ? { x: probeCenter.x, y: probeCenter.y } : undefined}
+            onSelectEntity={(id) => setSelectedId(id)}
+          />
+        </div>
+      )}
+
+      <div style={overlay({ top: 12, right: 12, flexDirection: "row", alignItems: "center" })}>
+        <StationBadge icon="🔬" name="Ciencia" />
+      </div>
+
+      {/* Panel derecho: escaneo + telemetría */}
+      <div style={overlay({ top: 64, right: 12, width: 280 })}>
+        {sel && sel.kind === "cpu" && (sel.scanLevel ?? 0) < 2 && scanning?.targetId !== sel.id && (
+          <button onClick={() => { setTune([50, 50]); send({ t: "science", cmd: "scan", id: sel.id }); }}>
+            {sel.scanLevel === 1 ? "🔬 Escaneo profundo" : "🛰 Escanear"}
+          </button>
+        )}
+        {scanning && sel && scanning.targetId === sel.id && (
+          <div style={{ background: "rgba(10,16,30,0.9)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.5rem" }}>
+            <ScanWave signalA={ship.scanSignal?.[0] ?? 0} signalB={ship.scanSignal?.[1] ?? 0} tuneA={tune[0]} />
+            {([0, 1] as const).map((i) => (
+              <input key={i} type="range" min={0} max={100} value={tune[i]}
+                onChange={(e) => applyTune(i, Number(e.target.value))}
+                style={{ width: "100%", accentColor: (ship.scanSignal?.[i] ?? 0) > 0.84 ? "#4ade80" : undefined }} />
+            ))}
+            <div style={{ background: "#1e293b", borderRadius: 3, height: 5 }}>
+              <div style={{ width: `${scanning.progress * 100}%`, background: "#facc15", height: 5, borderRadius: 3 }} />
+            </div>
+          </div>
+        )}
+        <div style={{ background: "rgba(10,16,30,0.9)", border: "1px solid var(--border)", borderRadius: 8 }}>
+          {eeField("Identificador", sel?.callSign ?? "–")}
+          {eeField("Distancia", sel ? distU(distOf(sel)) : "–")}
+          {eeField("Marcación", sel ? `${bearingOf(sel)}°` : "–")}
+          {eeField("Sector", sel ? sectorName(sel.x, sel.y) : "–")}
+          {eeField("Facción", sel?.faction === "hostile" ? "HOSTIL" : sel?.faction === "neutral" ? "Neutral" : sel?.faction === "friendly" ? "Aliada" : "–")}
+          {eeField("Clase", sel?.typeName ?? "–")}
+          {eeField("Escudos", sel?.shieldFrac != null ? `${Math.round(sel.shieldFrac * 100)}%` : "–")}
+          {eeField("Casco", sel?.hullFrac != null ? `${Math.round(sel.hullFrac * 100)}%` : "–")}
+          {eeField("Frecuencias", sel?.shieldFreq != null ? `E ${400 + sel.shieldFreq * 20} / R ${400 + (sel.beamFreq ?? 0) * 20} THz` : "–")}
+        </div>
+      </div>
+
+      {/* Vistas abajo-izquierda */}
+      <div style={overlay({ bottom: 12, left: 12 })}>
+        {probes.map((pr, i) => (
+          <button key={pr.id}
+            style={{ borderRadius: 20, background: view === pr.id ? "#0e7490" : "rgba(10,16,30,0.85)", borderColor: "#22d3ee" }}
+            onClick={() => setView(view === pr.id ? "radar" : pr.id)}>
+            🛰 Vista sonda {i + 1}
+          </button>
+        ))}
+        <button style={{ borderRadius: 20, background: view === "radar" ? "#e2e8f0" : "rgba(10,16,30,0.85)", color: view === "radar" ? "#0f172a" : undefined }} onClick={() => setView("radar")}>
+          Radar
+        </button>
+        <button
+          style={{ borderRadius: 20, background: view === "database" ? "#e2e8f0" : "rgba(10,16,30,0.85)", color: view === "database" ? "#0f172a" : undefined }}
+          onClick={() => { if (db.length === 0) fetch("/api/database").then((r) => r.json()).then(setDb).catch(() => {}); setView("database"); }}>
+          Base de datos
+        </button>
+      </div>
+
+      {/* Zoom abajo-derecha */}
+      <div style={overlay({ bottom: 12, right: 12, flexDirection: "row", alignItems: "center", background: "rgba(10,16,30,0.85)", border: "1px solid var(--border)", borderRadius: 20, padding: "0.3rem 0.8rem" })}>
+        <input type="range" min={1} max={6} step={0.5} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} style={{ width: 140 }} />
+        <span style={{ fontSize: "0.85rem", minWidth: 76 }}>Zoom: {zoom.toFixed(1)}x</span>
+      </div>
+    </div>
+  );
+}
+
+/* ————— RELAY ————— */
+
+export function RelayEE({ snap, send, events, channel, hack }: {
+  snap: GameSnap; send: (m: object) => void; events: TimedEvent[];
+  channel: CommsChannel | null; hack: HackState | null;
+}) {
+  const { ship } = snap;
+  const [zoom, setZoom] = useState(1);
+  const [mode, setMode] = useState<"select" | "waypoint" | "deleteWp" | "probe">("select");
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState(600);
+  const sel = snap.entities.find((e) => e.id === selectedId);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setSize(Math.max(360, Math.min(el.clientWidth - 8, el.clientHeight - 8))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const range = 60000 / zoom;
+
+  function clickWorld(x: number, y: number) {
+    if (mode === "waypoint") send({ t: "comms", cmd: "addWaypoint", x, y });
+    if (mode === "probe") send({ t: "comms", cmd: "launchProbe", x, y });
+    if (mode === "deleteWp") {
+      let best: { id: number; d: number } | null = null;
+      for (const w of snap.waypoints) {
+        const d = Math.hypot(w.x - x, w.y - y);
+        if (d < range / 12 && (!best || d < best.d)) best = { id: w.id, d };
+      }
+      if (best) send({ t: "comms", cmd: "removeWaypoint", id: best.id });
+    }
+  }
+
+  const alertColors = { normal: undefined, yellow: "#facc15", red: "#f87171" } as const;
+  const nextAlert = { normal: "yellow", yellow: "red", red: "normal" } as const;
+
+  return (
+    <div ref={wrapRef} style={{
+      position: "relative", height: "min(78vh, 860px)", width: "100%", overflow: "hidden", borderRadius: 8,
+      background: "#05070d",
+      boxShadow: ship.alert !== "normal" ? `inset 0 0 60px ${alertColors[ship.alert]}44` : undefined,
+    }}>
+      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Radar
+          snap={snap}
+          range={range}
+          size={size}
+          events={events}
+          rect
+          sectorGrid
+          coverage
+          targetId={selectedId}
+          onSelectEntity={mode === "select" ? (id) => setSelectedId(id) : undefined}
+          onClickWorld={mode !== "select" ? clickWorld : undefined}
+        />
+      </div>
+
+      <div style={overlay({ top: 12, right: 12, flexDirection: "row", alignItems: "center" })}>
+        <StationBadge icon="📡" name="Comunicaciones" />
+      </div>
+
+      {/* Pila de acciones izquierda */}
+      <div style={overlay({ top: 12, left: 12, width: 230 })}>
+        <button disabled={!sel || (!sel.scanned && sel.kind !== "station")} style={{ borderRadius: 20 }}
+          onClick={() => sel && send({ t: "comms", cmd: "hail", id: sel.id })}>
+          Abrir canal
+        </button>
+        <HackLaunchEE sel={sel} send={send} />
+        <button style={{ borderRadius: 20, background: mode === "waypoint" ? "#e2e8f0" : undefined, color: mode === "waypoint" ? "#0f172a" : undefined }}
+          onClick={() => setMode(mode === "waypoint" ? "select" : "waypoint")}>
+          Poner waypoint
+        </button>
+        <button style={{ borderRadius: 20, background: mode === "deleteWp" ? "#e2e8f0" : undefined, color: mode === "deleteWp" ? "#0f172a" : undefined }}
+          onClick={() => setMode(mode === "deleteWp" ? "select" : "deleteWp")}>
+          Borrar waypoint
+        </button>
+        <button style={{ borderRadius: 20, background: mode === "probe" ? "#e2e8f0" : undefined, color: mode === "probe" ? "#0f172a" : undefined }}
+          onClick={() => setMode(mode === "probe" ? "select" : "probe")}>
+          Lanzar sonda ({ship.probes})
+        </button>
+        <div style={{ height: 6 }} />
+        <InfoRow icon="🕐" label="Reloj" value={new Date(snap.time * 1000).toISOString().slice(11, 19)} />
+        <InfoRow icon="📍" label="Sector" value={sectorName(ship.x, ship.y)} />
+      </div>
+
+      {/* Canal / hacking como panel flotante derecho */}
+      {(channel || hack) && (
+        <div style={overlay({ top: 64, right: 12, width: 320 })}>
+          <div style={{ background: "rgba(10,16,30,0.95)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.6rem" }}>
+            {channel && (
+              <div>
+                <p style={{ margin: "0 0 0.4rem" }}>📡 <b style={{ color: "#facc15" }}>{channel.callSign}</b></p>
+                <p style={{ fontStyle: "italic", fontSize: "0.9rem" }}>“{channel.text}”</p>
+                <div className="row" style={{ flexWrap: "wrap" }}>
+                  {channel.options.map((opt, i) => (
+                    <button key={i} style={{ fontSize: "0.82rem", padding: "0.25rem 0.6rem" }}
+                      onClick={() => opt === "Cerrar canal" ? send({ t: "comms", cmd: "closeChannel" }) : send({ t: "comms", cmd: "choose", index: i })}>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {hack && <HackGridEE hack={hack} send={send} />}
+          </div>
+        </div>
+      )}
+
+      {/* Telemetría selección derecha */}
+      {!channel && !hack && sel && (
+        <div style={overlay({ top: 64, right: 12, width: 240 })}>
+          <div style={{ background: "rgba(10,16,30,0.9)", border: "1px solid var(--border)", borderRadius: 8 }}>
+            {eeField("Identificador", sel.callSign ?? "–")}
+            {eeField("Facción", sel.faction === "hostile" ? "HOSTIL" : sel.faction ?? "–")}
+            {eeField("Sector", sectorName(sel.x, sel.y))}
+          </div>
+        </div>
+      )}
+
+      {/* Zoom + alerta abajo */}
+      <div style={overlay({ bottom: 12, left: 12, flexDirection: "row", alignItems: "center", background: "rgba(10,16,30,0.85)", border: "1px solid var(--border)", borderRadius: 20, padding: "0.3rem 0.8rem" })}>
+        <input type="range" min={1} max={8} step={0.5} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} style={{ width: 140 }} />
+        <span style={{ fontSize: "0.85rem" }}>Zoom: {zoom.toFixed(1)}x</span>
+      </div>
+      <div style={overlay({ bottom: 12, right: 12 })}>
+        <button
+          style={{ borderRadius: 20, borderColor: alertColors[ship.alert], color: alertColors[ship.alert] }}
+          onClick={() => send({ t: "comms", cmd: "setAlert", level: nextAlert[ship.alert] })}
+        >
+          🚨 Alerta: {ship.alert === "normal" ? "normal" : ship.alert === "yellow" ? "AMARILLA" : "ROJA"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function HackLaunchEE({ sel, send }: { sel: GameSnap["entities"][number] | undefined; send: (m: object) => void }) {
+  const [open, setOpen] = useState(false);
+  const canHack = sel && sel.kind === "cpu" && sel.scanned;
+  if (!open) {
+    return <button disabled={!canHack} style={{ borderRadius: 20 }} onClick={() => setOpen(true)}>Hackear</button>;
+  }
+  return (
+    <div className="row" style={{ gap: 4 }}>
+      {([["shields", "Escudos"], ["engines", "Motores"], ["beams", "Rayos"]] as const).map(([sys, label]) => (
+        <button key={sys} style={{ fontSize: "0.75rem", padding: "0.2rem 0.4rem" }}
+          onClick={() => { sel && send({ t: "comms", cmd: "hackStart", id: sel.id, system: sys }); setOpen(false); }}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function HackGridEE({ hack, send }: { hack: HackState; send: (m: object) => void }) {
+  const grid = new Map<string, number>();
+  for (const c of hack.cells) grid.set(c.x + "," + c.y, c.v);
+  return (
+    <div>
+      <p style={{ margin: "0.3rem 0" }}>
+        💻 {hack.targetCallSign} · {hack.status === "playing" ? `${hack.safeLeft} nodos` : hack.status === "success" ? "✓ comprometido" : "✗ rechazado"}
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${hack.cols}, 24px)`, gap: 2 }}>
+        {Array.from({ length: hack.rows }, (_, y) =>
+          Array.from({ length: hack.cols }, (_, x) => {
+            const v = grid.get(x + "," + y);
+            const revealed = v !== undefined;
+            return (
+              <button key={x + "," + y} disabled={revealed || hack.status !== "playing"}
+                onClick={() => send({ t: "comms", cmd: "hackReveal", x, y })}
+                style={{ width: 24, height: 24, padding: 0, fontSize: "0.7rem", background: v === -1 ? "#7f1d1d" : revealed ? "#0d1526" : "#1d2c4d" }}>
+                {v === -1 ? "✸" : v && v > 0 ? v : ""}
+              </button>
+            );
+          }),
+        )}
+      </div>
+      <button style={{ marginTop: 6, fontSize: "0.78rem" }} onClick={() => send({ t: "comms", cmd: "hackCancel" })}>
+        {hack.status === "playing" ? "Abortar" : "Cerrar"}
+      </button>
+    </div>
+  );
+}
+
+/* ————— ENGINEERING ————— */
+
+const SYS_ICONS: Record<ShipSystem, string> = {
+  reactor: "☢", beams: "✦", missiles: "🚀", maneuver: "🎡",
+  impulse: "➤", warp: "〰", jump: "⤳", shields: "🛡",
+};
+
+function MiniBarEE({ frac, color }: { frac: number; color: string }) {
+  return (
+    <div style={{ background: "#131c2e", border: "1px solid var(--border)", height: 16, position: "relative", flex: 1 }}>
+      <div style={{ width: `${Math.max(0, Math.min(100, frac * 100))}%`, background: color, height: "100%" }} />
+    </div>
+  );
+}
+
+export function EngineeringEE({ snap, send }: { snap: GameSnap; send: (m: object) => void }) {
+  const { ship } = snap;
+  const [selected, setSelected] = useState<ShipSystem>("reactor");
+  const sys = ship.systems[selected];
+  const coolantUsed = SHIP_SYSTEMS.reduce((sum, n) => sum + ship.systems[n].coolant, 0);
+
+  return (
+    <div style={{ position: "relative", height: "min(78vh, 860px)", width: "100%", overflow: "auto", borderRadius: 8, background: "#05070d", padding: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <button
+          style={{ borderRadius: 20, borderColor: "#f87171", color: "#f87171", background: "rgba(127,29,29,0.25)" }}
+          onClick={() => send({ t: "selfDestruct", cmd: ship.selfDestruct ? "cancel" : "arm" })}
+          title="Solo el capitán arma/cancela; Ingeniería confirma"
+        >
+          ☠ {ship.selfDestruct ? "Autodestrucción ARMADA" : "Autodestrucción"}
+        </button>
+        <StationBadge icon="🔧" name="Ingeniería" />
+      </div>
+
+      {ship.selfDestruct?.state === "armed" && (
+        <button
+          style={{ margin: "0.5rem 0", borderColor: "#f87171", background: "#7f1d1d", width: "100%" }}
+          onClick={() => send({ t: "selfDestruct", cmd: "confirm" })}
+        >
+          ☠ CONFIRMAR DETONACIÓN ({Math.ceil(ship.selfDestruct.t)} s)
+        </button>
+      )}
+      {ship.selfDestruct?.state === "countdown" && (
+        <p style={{ textAlign: "center", color: "#f87171", fontSize: "1.5rem", animation: "pulse 0.4s infinite alternate" }}>
+          ☠ DETONACIÓN EN {Math.ceil(ship.selfDestruct.t)} ☠
+        </p>
+      )}
+
+      <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+        {/* Columna izquierda: info nave */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, width: 250 }}>
+          <InfoRow icon="⚡" label="Energía" value={String(Math.round(ship.energy))} color={ship.energy < 200 ? "#f87171" : undefined} />
+          <InfoRow icon="🧱" label="Casco" value={`${Math.round((ship.hull / ship.hullMax) * 100)}%`} color={ship.hull / ship.hullMax < 0.4 ? "#f87171" : undefined} />
+          <InfoRow icon="🛡" label="Proa" value={`${Math.round((ship.shieldFront / ship.shieldMax) * 100)}%`} />
+          <InfoRow icon="🛡" label="Popa" value={`${Math.round((ship.shieldRear / ship.shieldMax) * 100)}%`} />
+          <InfoRow icon="❄" label="Refrigerante" value={`${10 - coolantUsed} libre`} />
+          <div style={{ height: 8 }} />
+          <div style={{ background: "rgba(10,16,30,0.85)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.5rem", fontSize: "0.82rem" }}>
+            <p style={{ margin: 0, color: "var(--accent)" }}>{SYSTEM_LABELS[selected]}</p>
+            <p className="muted" style={{ margin: "0.25rem 0 0" }}>
+              Eficacia {Math.round(sys.power * sys.health * 100)}% · Salud {Math.round(sys.health * 100)}%
+              {sys.heat > 0.7 && <span style={{ color: "#f87171" }}> · ¡CALOR {Math.round(sys.heat * 100)}%!</span>}
+            </p>
+            <button
+              style={{ marginTop: 6, fontSize: "0.78rem", background: ship.repairing === selected ? "var(--accent)" : undefined, color: ship.repairing === selected ? "#082f49" : undefined }}
+              onClick={() => send({ t: "engineering", cmd: "repair", system: ship.repairing === selected ? null : selected })}
+            >
+              🔧 Equipo de reparación {ship.repairing === selected ? "aquí" : "→ aquí"}
+            </button>
+          </div>
+        </div>
+
+        {/* Tabla de sistemas */}
+        <div style={{ flex: 1 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "190px 1fr 1fr 1fr 1fr", gap: "4px 8px", alignItems: "center", fontSize: "0.85rem" }}>
+            <span />
+            <span className="muted" style={{ textAlign: "center" }}>🔧 salud</span>
+            <span className="muted" style={{ textAlign: "center" }}>🌡 calor</span>
+            <span className="muted" style={{ textAlign: "center" }}>⚡ potencia</span>
+            <span className="muted" style={{ textAlign: "center" }}>❄ refrig.</span>
+            {SHIP_SYSTEMS.map((name) => {
+              const s2 = ship.systems[name];
+              const isSel = name === selected;
+              return (
+                <FragmentRow key={name}>
+                  <button
+                    onClick={() => setSelected(name)}
+                    style={{
+                      textAlign: "left", borderRadius: 18, padding: "0.3rem 0.7rem",
+                      background: isSel ? "#e2e8f0" : "rgba(10,16,30,0.85)",
+                      color: isSel ? "#0f172a" : undefined,
+                      fontWeight: isSel ? 700 : 400,
+                    }}
+                  >
+                    {SYS_ICONS[name]} {SYSTEM_LABELS[name]}
+                  </button>
+                  <MiniBarEE frac={s2.health} color={s2.health < 0.5 ? "#f87171" : "#4ade80"} />
+                  <MiniBarEE frac={s2.heat} color={s2.heat > 0.7 ? "#f87171" : "#fb923c"} />
+                  <MiniBarEE frac={s2.power / 3} color="#eab308" />
+                  <MiniBarEE frac={s2.coolant / 10} color="#38bdf8" />
+                </FragmentRow>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Sliders verticales del sistema seleccionado */}
+        <div style={{
+          display: "flex", gap: 16, background: "rgba(10,16,30,0.85)", border: "1px solid var(--border)",
+          borderRadius: 12, padding: "0.8rem 1rem", alignItems: "center", height: "fit-content",
+        }}>
+          {[
+            { label: `Potencia ${Math.round(sys.power * 100)}%`, min: 0, max: 300, step: 10, value: Math.round(sys.power * 100),
+              onChange: (v: number) => send({ t: "engineering", cmd: "setPower", system: selected, value: v / 100 }) },
+            { label: `Refrig. ${sys.coolant}/10`, min: 0, max: 10, step: 1, value: sys.coolant,
+              onChange: (v: number) => send({ t: "engineering", cmd: "setCoolant", system: selected, value: v }) },
+          ].map((cfg, i) => (
+            <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+              <input
+                type="range" min={cfg.min} max={cfg.max} step={cfg.step} value={cfg.value}
+                onChange={(e) => cfg.onChange(Number(e.target.value))}
+                style={{
+                  writingMode: "vertical-lr" as never, direction: "rtl", width: 36, height: 240,
+                  WebkitAppearance: "slider-vertical",
+                } as React.CSSProperties}
+              />
+              <span className="muted" style={{ fontSize: "0.75rem", textAlign: "center", width: 80 }}>{cfg.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FragmentRow({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
+}

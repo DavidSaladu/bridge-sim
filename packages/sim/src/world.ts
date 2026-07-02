@@ -244,6 +244,7 @@ export class PlayerShip extends MovingShip {
   private boostVx = 0;
   private boostVy = 0;
   selfDestruct: { state: "armed" | "countdown"; t: number } | null = null;
+  alert: "normal" | "yellow" | "red" = "normal";
   private restockTimer = 0;
   tubes: TubeSim[];
   beamCd = 0;
@@ -630,6 +631,7 @@ export class PlayerShip extends MovingShip {
       shieldCalibration: this.shieldCalT !== null ? this.shieldCalT / SHIELD_CAL_TIME : null,
       combatCharge: this.combatCharge,
       selfDestruct: this.selfDestruct ? { ...this.selfDestruct } : null,
+      alert: this.alert,
       docked: this.dockedTo != null,
       canDock: this.dockedTo == null && this.speed <= DOCK_MAX_SPEED && this.nearestDockable(world) != null,
       warp: this.warp,

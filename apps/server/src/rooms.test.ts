@@ -463,3 +463,18 @@ describe("Hacking en sala", () => {
     room.stop();
   });
 });
+
+describe("Nivel de alerta", () => {
+  it("comms cambia la alerta y se anuncia al puente", () => {
+    const room = new RoomManager().create();
+    const b = fakeOutbox();
+    const r = room.join("Rel", b);
+    if (!r.ok) throw new Error("join failed");
+    room.handleMessage(r.id, { t: "takeStation", station: "comms" });
+    room.handleMessage(r.id, { t: "startGame" });
+    room.handleMessage(r.id, { t: "comms", cmd: "setAlert", level: "red" });
+    expect(room.world!.ship.alert).toBe("red");
+    expect(b.msgs.some((m) => m.t === "chat" && /ALERTA ROJA/.test(m.text))).toBe(true);
+    room.stop();
+  });
+});

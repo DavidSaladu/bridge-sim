@@ -67,6 +67,7 @@ export interface PlayerShipState {
   shieldCalibration: number | null;
   combatCharge: number;
   selfDestruct: { state: "armed" | "countdown"; t: number } | null;
+  alert: "normal" | "yellow" | "red";
 }
 
 export type SimEvent =
