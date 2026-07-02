@@ -110,6 +110,56 @@ function getObjectsInRadius(x, y, r)
   return out
 end
 
+-- Traducción (gettext de EE): _("categoría", "texto") o _("texto") → devuelve el texto
+function _(a, b) return b or a end
+
+-- Utilidades portadas de scripts/utils.lua de EE (GPL-2.0)
+function setCirclePos(obj, x, y, angle, dist)
+  local dx, dy = vectorFromAngle(angle, dist)
+  return obj:setPosition(x + dx, y + dy)
+end
+
+function createObjectsOnLine(x1, y1, x2, y2, spacing, object_type, rows, chance, randomize)
+  rows = rows or 1
+  chance = chance or 100
+  randomize = randomize or 0
+  local d = distance(x1, y1, x2, y2)
+  local xd = (x2 - x1) / d
+  local yd = (y2 - y1) / d
+  for cnt_x = 0, d, spacing do
+    for cnt_y = 0, (rows - 1) * spacing, spacing do
+      local px = x1 + xd * cnt_x + yd * (cnt_y - (rows - 1) * spacing * 0.5) + random(-randomize, randomize)
+      local py = y1 + yd * cnt_x - xd * (cnt_y - (rows - 1) * spacing * 0.5) + random(-randomize, randomize)
+      if random(0, 100) < chance then
+        object_type():setPosition(px, py)
+      end
+    end
+  end
+end
+
+function placeRandomAroundPoint(object_type, amount, dist_min, dist_max, x0, y0)
+  for n = 1, amount do
+    local r = random(0, 360)
+    local dist = random(dist_min, dist_max)
+    local dx, dy = vectorFromAngle(r, dist)
+    object_type():setPosition(x0 + dx, y0 + dy)
+  end
+end
+
+function mergeTables(a, b)
+  for key, value in pairs(b) do
+    if a[key] == nil then
+      a[key] = value
+    elseif type(a[key]) == "table" and type(value) == "table" then
+      mergeTables(a[key], value)
+    end
+  end
+end
+
+function addGMFunction(_, _) end
+function removeGMFunction(_) end
+function clearGMFunctions() end
+
 -- Sistema de comunicaciones scriptado (setCommsFunction / setCommsMessage / addCommsReply)
 __comms = { fns = {}, current = nil }
 function setCommsMessage(t)

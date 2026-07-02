@@ -29,6 +29,8 @@ const IMPLEMENTED = {
     "getEEVersion", "allowNewPlayerShips", "onNewPlayerShip", "getScriptStorage",
     "getSectorName", "addReputationPoints", "takeReputationPoints", "getReputationPoints",
     "getObjectsInRadius", "setCommsMessage", "addCommsReply",
+    "_", "setCirclePos", "createObjectsOnLine", "placeRandomAroundPoint", "mergeTables",
+    "addGMFunction", "removeGMFunction", "clearGMFunctions",
   ]),
   methods: new Set([
     "setPosition", "getPosition", "setCallSign", "getCallSign", "setTemplate",

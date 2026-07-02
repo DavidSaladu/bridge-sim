@@ -180,3 +180,28 @@ describe("B2.2: utilidades y comms scriptados", () => {
     runner.dispose();
   });
 });
+
+describe("Utilidades de utils.lua", () => {
+  it("_, setCirclePos, createObjectsOnLine y placeRandomAroundPoint funcionan", async () => {
+    const w = new World(3);
+    const { log, cb } = makeCallbacks();
+    const runner = await ScenarioRunner.create(w, `
+      function init()
+        globalMessage(_("categoria", "texto traducido"))
+        local a = CpuShip()
+        setCirclePos(a, 0, 0, 0, 1000)
+        local x, y = a:getPosition()
+        if math.abs(x - 1000) < 1 and math.abs(y) < 1 then globalMessage("circlepos ok") end
+        createObjectsOnLine(0, 5000, 4000, 5000, 500, Asteroid)
+        placeRandomAroundPoint(Mine, 5, 1000, 2000, -8000, -8000)
+      end
+    `, cb);
+    await runner.init();
+    expect(log.messages).toContain("texto traducido");
+    expect(log.messages).toContain("circlepos ok");
+    const kinds = [...w.allEntities()].map((e) => e.kind);
+    expect(kinds.filter((k) => k === "asteroid").length).toBeGreaterThan(6);
+    expect(kinds.filter((k) => k === "mine").length).toBe(5);
+    runner.dispose();
+  });
+});

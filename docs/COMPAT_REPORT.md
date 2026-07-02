@@ -2,21 +2,17 @@
 
 Generado por `scripts/compat-harness.mjs` contra 37 escenarios oficiales de EE.
 
-- Escenarios que cargan e inician sin error (entorno instrumentado): **5/37**
-- Cobertura de símbolos: globales **20/43**, métodos **32/56**
+- Escenarios que cargan e inician sin error (entorno instrumentado): **6/37**
+- Cobertura de símbolos: globales **24/43**, métodos **32/56**
 
-### Globales/constructores: 20/43 cubiertos (47%)
+### Globales/constructores: 24/43 cubiertos (56%)
 
 **Faltantes por uso (top 40):**
 
 | Símbolo | Usos |
 |---|---|
-| `_` | 118 |
 | `stockTemplate` | 49 |
-| `setCirclePos` | 9 |
-| `createObjectsOnLine` | 5 |
 | `createEntity` | 3 |
-| `addGMFunction` | 3 |
 | `placeStation` | 2 |
 | `y2` | 1 |
 | `y1` | 1 |
