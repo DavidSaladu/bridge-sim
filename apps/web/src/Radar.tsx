@@ -20,9 +20,10 @@ interface Props {
   sectorGrid?: boolean;
   edgeSignals?: boolean;
   center?: { x: number; y: number };
+  ringLabels?: boolean;
 }
 
-export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClickWorld, targetId, events, showBeamArc, sectorGrid, edgeSignals, center }: Props) {
+export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClickWorld, targetId, events, showBeamArc, sectorGrid, edgeSignals, center, ringLabels }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -44,10 +45,23 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
     ctx.beginPath();
     ctx.arc(c, c, c - 1, 0, Math.PI * 2);
     ctx.fill();
-    for (const f of [0.33, 0.66, 1]) {
+    const ringCount = ringLabels ? Math.min(5, Math.round(range / 5000)) || 4 : 3;
+    for (let ri = 1; ri <= ringCount; ri++) {
+      const f = ri / ringCount;
       ctx.beginPath();
       ctx.arc(c, c, (c - 1) * f, 0, Math.PI * 2);
       ctx.stroke();
+    }
+    if (ringLabels) {
+      ctx.fillStyle = "rgba(148,163,184,0.5)";
+      ctx.font = `${Math.max(11, size / 45)}px monospace`;
+      ctx.textAlign = "center";
+      for (let ri = 1; ri <= ringCount; ri++) {
+        const f = ri / ringCount;
+        const uVal = (range / 1000) * f;
+        ctx.fillText(`${Number(uVal.toFixed(1))}u`, c, c - (c - 1) * f + 16);
+      }
+      ctx.textAlign = "start";
     }
     ctx.beginPath();
     ctx.moveTo(c, 2); ctx.lineTo(c, size - 2);
@@ -354,10 +368,16 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
       onSelectEntity(best ? best.id : null);
       return;
     }
-    if (onSetHeading) {
-      const deg = (Math.atan2(px, -py) * 180) / Math.PI;
-      onSetHeading(((deg % 360) + 360) % 360);
-    }
+  }
+
+  const draggingHeading = useRef(false);
+
+  function headingFromEvent(ev: React.PointerEvent<HTMLCanvasElement>) {
+    const rect = ev.currentTarget.getBoundingClientRect();
+    const dx = ev.clientX - rect.left - size / 2;
+    const dy = ev.clientY - rect.top - size / 2;
+    const deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
+    onSetHeading?.(((deg % 360) + 360) % 360);
   }
 
   return (
@@ -365,6 +385,17 @@ export function Radar({ snap, range, size, onSetHeading, onSelectEntity, onClick
       ref={canvasRef}
       width={size}
       height={size}
+      onPointerDown={(ev) => {
+        if (onSetHeading) {
+          draggingHeading.current = true;
+          headingFromEvent(ev);
+          ev.currentTarget.setPointerCapture(ev.pointerId);
+        }
+      }}
+      onPointerMove={(ev) => {
+        if (onSetHeading && draggingHeading.current) headingFromEvent(ev);
+      }}
+      onPointerUp={() => { draggingHeading.current = false; }}
       onClick={handleClick}
       style={{ cursor: onSetHeading || onSelectEntity || onClickWorld ? "crosshair" : "default", touchAction: "manipulation" }}
     />

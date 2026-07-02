@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Viewport3D } from "./Viewport3D.js";
 import { ScanWave } from "./ScanWave.js";
+import { HelmEE, WeaponsEE } from "./EEScreens.js";
 import { distU, sectorName, speedU } from "./units.js";
 import type { TimedEvent } from "./Radar.js";
 import type { GameSnap, MissileType, ShipSystem, Station } from "@bridge/shared";
@@ -38,9 +39,9 @@ export function StationView({ station, snap, send, events, channel, hack }: Prop
     case "comms":
       return <CommsView snap={snap} send={send} events={events} channel={channel} hack={hack} />;
     case "helm":
-      return <HelmView snap={snap} send={send} events={events} />;
+      return <HelmEE snap={snap} send={send} events={events} />;
     case "weapons":
-      return <WeaponsView snap={snap} send={send} events={events} />;
+      return <WeaponsEE snap={snap} send={send} events={events} />;
     case "engineering":
       return <EngineeringView snap={snap} send={send} />;
     case "science":
